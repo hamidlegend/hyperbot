@@ -1,0 +1,328 @@
+"""
+Risk Manager Module
+Handles position sizing, risk calculation, and trade management
+"""
+
+import logging
+from typing import Optional, Dict
+from dataclasses import dataclass
+import config
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TradeParams:
+    """Parameters for a trade"""
+    symbol: str
+    direction: str  # "long" or "short"
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    position_size: float
+    risk_amount: float
+    leverage: int
+
+
+class RiskManager:
+    """Manages risk and position sizing"""
+
+    def __init__(self, client):
+        """
+        Initialize RiskManager
+
+        Args:
+            client: HyperliquidClient instance
+        """
+        self.client = client
+
+    def calculate_position_size(
+        self,
+        entry_price: float,
+        stop_loss: float,
+        account_balance: float = None
+    ) -> float:
+        """
+        Calculate position size based on risk parameters
+
+        Args:
+            entry_price: Entry price
+            stop_loss: Stop loss price
+            account_balance: Account balance (fetched if None)
+
+        Returns:
+            Position size
+        """
+        if account_balance is None:
+            balance = self.client.get_balance()
+            account_balance = balance['account_value']
+
+        # Risk amount = account_balance * risk_per_trade
+        risk_amount = account_balance * config.RISK_PER_TRADE
+
+        # Risk per unit = |entry - stop_loss|
+        risk_per_unit = abs(entry_price - stop_loss)
+
+        if risk_per_unit == 0:
+            logger.warning("Risk per unit is zero, cannot calculate position size")
+            return 0
+
+        # Position size (without leverage)
+        base_position_size = risk_amount / risk_per_unit
+
+        # Apply leverage
+        position_value = base_position_size * entry_price
+        max_position_value = account_balance * config.LEVERAGE
+
+        # Ensure we don't exceed max leverage
+        if position_value > max_position_value:
+            position_size = max_position_value / entry_price
+        else:
+            position_size = base_position_size
+
+        return round(position_size, 4)
+
+    def create_trade_params(
+        self,
+        setup: dict,
+        account_balance: float = None
+    ) -> Optional[TradeParams]:
+        """
+        Create trade parameters from a setup
+
+        Args:
+            setup: Trade setup dict
+            account_balance: Account balance (fetched if None)
+
+        Returns:
+            TradeParams or None
+        """
+        if setup['status'] != 'breakout':
+            return None
+
+        entry_price = setup['entry_price']
+        stop_loss = setup['stop_loss']
+        take_profit = setup['take_profit']
+
+        # Calculate position size
+        position_size = self.calculate_position_size(
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            account_balance=account_balance
+        )
+
+        if position_size <= 0:
+            return None
+
+        # Calculate risk amount
+        risk_per_unit = abs(entry_price - stop_loss)
+        risk_amount = position_size * risk_per_unit
+
+        return TradeParams(
+            symbol=config.SYMBOL,
+            direction=config.DIRECTION,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            position_size=position_size,
+            risk_amount=risk_amount,
+            leverage=config.LEVERAGE
+        )
+
+    def validate_trade(self, params: TradeParams) -> tuple[bool, str]:
+        """
+        Validate trade parameters before execution
+
+        Args:
+            params: TradeParams to validate
+
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        # Check position size
+        if params.position_size <= 0:
+            return False, "Invalid position size"
+
+        # Check SL is below entry for long
+        if params.direction == "long" and params.stop_loss >= params.entry_price:
+            return False, "Stop loss must be below entry for long"
+
+        # Check TP is above entry for long
+        if params.direction == "long" and params.take_profit <= params.entry_price:
+            return False, "Take profit must be above entry for long"
+
+        # Check risk amount is reasonable
+        balance = self.client.get_balance()
+        if params.risk_amount > balance['account_value'] * 0.1:
+            return False, "Risk amount too high (>10% of account)"
+
+        return True, "Trade validated"
+
+
+class PositionManager:
+    """Manages open positions"""
+
+    def __init__(self, client):
+        """
+        Initialize PositionManager
+
+        Args:
+            client: HyperliquidClient instance
+        """
+        self.client = client
+        self.active_trades: Dict[str, dict] = {}
+
+    def has_open_position(self, symbol: str = None) -> bool:
+        """Check if there's an open position for symbol"""
+        symbol = symbol or config.SYMBOL
+        position = self.client.get_position(symbol)
+        return position is not None and abs(position['size']) > 0
+
+    def get_position_info(self, symbol: str = None) -> Optional[dict]:
+        """Get current position information"""
+        symbol = symbol or config.SYMBOL
+        return self.client.get_position(symbol)
+
+    def open_position(self, params: TradeParams) -> dict:
+        """
+        Open a new position
+
+        Args:
+            params: TradeParams for the trade
+
+        Returns:
+            Order response
+        """
+        # Set leverage first
+        logger.info(f"Setting leverage to {params.leverage}x")
+        self.client.set_leverage(params.symbol, params.leverage)
+
+        # Place market order
+        logger.info(
+            f"Opening {params.direction} position: "
+            f"{params.position_size} {params.symbol} @ ~{params.entry_price}"
+        )
+
+        is_buy = params.direction == "long"
+
+        response = self.client.place_market_order(
+            symbol=params.symbol,
+            is_buy=is_buy,
+            size=params.position_size
+        )
+
+        if response.get('status') == 'ok':
+            # Store trade info
+            self.active_trades[params.symbol] = {
+                'params': params,
+                'entry_time': response.get('timestamp'),
+                'status': 'open'
+            }
+
+            logger.info(f"Position opened successfully")
+        else:
+            logger.error(f"Failed to open position: {response}")
+
+        return response
+
+    def close_position(self, symbol: str = None, reason: str = "") -> dict:
+        """
+        Close position for symbol
+
+        Args:
+            symbol: Trading pair
+            reason: Reason for closing
+
+        Returns:
+            Order response
+        """
+        symbol = symbol or config.SYMBOL
+        logger.info(f"Closing position for {symbol}. Reason: {reason}")
+
+        response = self.client.close_position(symbol)
+
+        if response.get('status') == 'ok':
+            if symbol in self.active_trades:
+                del self.active_trades[symbol]
+            logger.info("Position closed successfully")
+        else:
+            logger.error(f"Failed to close position: {response}")
+
+        return response
+
+    def check_sl_tp(self, symbol: str = None) -> Optional[str]:
+        """
+        Check if price has hit SL or TP
+
+        Args:
+            symbol: Trading pair
+
+        Returns:
+            "sl", "tp", or None
+        """
+        symbol = symbol or config.SYMBOL
+
+        if symbol not in self.active_trades:
+            return None
+
+        trade = self.active_trades[symbol]
+        params = trade['params']
+
+        # Get current price
+        position = self.get_position_info(symbol)
+        if position is None:
+            return None
+
+        current_pnl = position['unrealized_pnl']
+        entry_price = position['entry_price']
+
+        # For long positions
+        if params.direction == "long":
+            # Check if we need to get current price instead
+            mids = self.client.get_all_mids()
+            current_price = float(mids.get(symbol, 0))
+
+            if current_price <= params.stop_loss:
+                return "sl"
+            elif current_price >= params.take_profit:
+                return "tp"
+
+        return None
+
+    def monitor_position(self, symbol: str = None) -> dict:
+        """
+        Monitor an open position
+
+        Args:
+            symbol: Trading pair
+
+        Returns:
+            Position status dict
+        """
+        symbol = symbol or config.SYMBOL
+
+        position = self.get_position_info(symbol)
+
+        if position is None:
+            return {'status': 'no_position'}
+
+        sl_tp_status = self.check_sl_tp(symbol)
+
+        if sl_tp_status == "sl":
+            return {
+                'status': 'sl_hit',
+                'position': position,
+                'action': 'close'
+            }
+        elif sl_tp_status == "tp":
+            return {
+                'status': 'tp_hit',
+                'position': position,
+                'action': 'close'
+            }
+
+        return {
+            'status': 'open',
+            'position': position,
+            'unrealized_pnl': position['unrealized_pnl']
+        }

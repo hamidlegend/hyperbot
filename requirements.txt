@@ -1,0 +1,30 @@
+# Hyperliquid Trading Bot Dependencies
+
+# Hyperliquid SDK
+hyperliquid-python-sdk>=0.1.0
+
+# Data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# HTTP requests
+requests>=2.31.0
+aiohttp>=3.9.0
+
+# WebSocket for real-time data
+websockets>=12.0
+
+# Async support
+asyncio-throttle>=1.0.0
+
+# Cryptographic signing
+eth-account>=0.10.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Logging
+colorlog>=6.7.0
+
+# Technical analysis (optional, for additional indicators)
+ta>=0.11.0
