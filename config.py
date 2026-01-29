@@ -90,7 +90,7 @@ USE_TESTNET = False
 # =============================================================================
 
 # Check interval in seconds
-CHECK_INTERVAL = 10
+CHECK_INTERVAL = 5
 
 # Maximum open positions
 MAX_OPEN_POSITIONS = 1
