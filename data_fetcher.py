@@ -226,6 +226,9 @@ def find_swing_highs(df: pd.DataFrame, lookback: int = None) -> list:
     lookback = lookback or config.SWING_LOOKBACK
     swing_highs = []
 
+    logger.debug(f"Searching for swing highs in {len(df)} candles with lookback={lookback}")
+    logger.debug(f"Search range: index {lookback} to {len(df) - lookback - 1}")
+
     for i in range(lookback, len(df) - lookback):
         is_swing_high = True
         current_high = df.iloc[i]['high']
@@ -250,6 +253,7 @@ def find_swing_highs(df: pd.DataFrame, lookback: int = None) -> list:
                 'timestamp': df.iloc[i]['timestamp']
             })
 
+    logger.debug(f"Found {len(swing_highs)} swing highs")
     return swing_highs
 
 

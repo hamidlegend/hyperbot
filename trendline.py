@@ -3,12 +3,15 @@ Dynamic Trendline Module
 Handles trendline detection and breakout identification
 """
 
+import logging
 import numpy as np
 import pandas as pd
 from typing import Optional, List, Tuple
 from dataclasses import dataclass
 import config
 from data_fetcher import find_swing_highs, find_swing_lows, get_recent_swing_low
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,11 +66,15 @@ class TrendlineDetector:
         Returns:
             Trendline object or None
         """
+        logger.debug(f"Swing highs found: {len(swing_highs)}, need at least {config.MIN_SWING_HIGHS}")
+
         if len(swing_highs) < config.MIN_SWING_HIGHS:
+            logger.debug(f"Not enough swing highs: {len(swing_highs)} < {config.MIN_SWING_HIGHS}")
             return None
 
         # Use the most recent swing highs (up to MAX_SWING_HIGHS)
         recent_highs = swing_highs[-config.MAX_SWING_HIGHS:]
+        logger.debug(f"Using {len(recent_highs)} recent swing highs for trendline")
 
         # Try different combinations of swing highs
         best_trendline = None
@@ -144,6 +151,7 @@ class TrendlineDetector:
         """
         # Must be descending (negative slope)
         if trendline.slope >= 0:
+            logger.debug(f"Rejected: slope is not descending ({trendline.slope:.6f})")
             return False
 
         # Slope must be within acceptable range
@@ -151,12 +159,18 @@ class TrendlineDetector:
         avg_price = df['close'].mean()
         normalized_slope = trendline.slope / avg_price
 
+        logger.debug(f"Trendline slope: {trendline.slope:.6f}, normalized: {normalized_slope:.6f}")
+        logger.debug(f"Valid range: {config.MAX_TRENDLINE_SLOPE} <= slope <= {config.MIN_TRENDLINE_SLOPE}")
+
         if normalized_slope > config.MIN_TRENDLINE_SLOPE:  # Too flat
+            logger.debug(f"Rejected: too flat ({normalized_slope:.6f} > {config.MIN_TRENDLINE_SLOPE})")
             return False
 
         if normalized_slope < config.MAX_TRENDLINE_SLOPE:  # Too steep
+            logger.debug(f"Rejected: too steep ({normalized_slope:.6f} < {config.MAX_TRENDLINE_SLOPE})")
             return False
 
+        logger.debug(f"Trendline VALID: normalized slope {normalized_slope:.6f}")
         return True
 
     def _score_trendline(
@@ -274,10 +288,18 @@ def analyze_trendline_setup(df: pd.DataFrame) -> Optional[dict]:
     Returns:
         Setup dict with trendline, breakout info, and trade parameters
     """
+    logger.debug(f"Analyzing {len(df)} candles for trendline setup (lookback={config.SWING_LOOKBACK})")
+
     # Find swing highs
     swing_highs = find_swing_highs(df, lookback=config.SWING_LOOKBACK)
 
+    logger.debug(f"Found {len(swing_highs)} swing highs")
+    if swing_highs:
+        for i, sh in enumerate(swing_highs[-5:]):  # Show last 5
+            logger.debug(f"  Swing High #{len(swing_highs)-4+i}: index={sh['index']}, price={sh['price']:.4f}")
+
     if len(swing_highs) < config.MIN_SWING_HIGHS:
+        logger.debug(f"Not enough swing highs for trendline: {len(swing_highs)} < {config.MIN_SWING_HIGHS}")
         return None
 
     # Create trendline detector
@@ -287,7 +309,10 @@ def analyze_trendline_setup(df: pd.DataFrame) -> Optional[dict]:
     trendline = detector.find_descending_trendline(df, swing_highs)
 
     if trendline is None:
+        logger.debug("No valid descending trendline found")
         return None
+
+    logger.info(f"Valid trendline found: slope={trendline.slope:.6f}, touches={trendline.num_touches}")
 
     # Check for breakout
     breakout = detector.check_breakout(df, trendline)

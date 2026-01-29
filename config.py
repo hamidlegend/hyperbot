@@ -26,10 +26,11 @@ MIN_SWING_HIGHS = 2
 MAX_SWING_HIGHS = 4
 
 # Number of candles to look back for swing high detection
-SWING_LOOKBACK = 3  # A swing high has lower highs on both sides
+# Lower = more sensitive (finds more swings), Higher = stricter
+SWING_LOOKBACK = 2  # A swing high has lower highs on both sides
 
 # Number of candles to analyze for trendline
-CANDLES_TO_ANALYZE = 100
+CANDLES_TO_ANALYZE = 150
 
 # =============================================================================
 # RISK MANAGEMENT
@@ -48,11 +49,15 @@ RISK_REWARD_RATIO = 1.0
 # FILTERS (to avoid bad trades)
 # =============================================================================
 
-# Minimum slope for trendline (too flat = invalid)
-MIN_TRENDLINE_SLOPE = -0.001  # Must be negative (descending)
+# Minimum slope for trendline (normalized by price)
+# Too flat slopes are rejected - this is the shallowest allowed
+# With HYPE ~33, -0.0003 means ~0.01 price drop per candle
+MIN_TRENDLINE_SLOPE = -0.0003  # Shallowest allowed (almost flat)
 
-# Maximum slope for trendline (too steep = risky)
-MAX_TRENDLINE_SLOPE = -0.1
+# Maximum slope for trendline (normalized by price)
+# Too steep slopes are rejected - this is the steepest allowed
+# With HYPE ~33, -0.03 means ~1.0 price drop per candle
+MAX_TRENDLINE_SLOPE = -0.03  # Steepest allowed
 
 # Minimum breakout strength (price above trendline)
 MIN_BREAKOUT_PERCENT = 0.001  # 0.1%
