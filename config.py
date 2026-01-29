@@ -73,8 +73,8 @@ API_URL = "https://api.hyperliquid.xyz"
 # Testnet URL (for testing)
 TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
 
-# Use testnet for testing
-USE_TESTNET = True
+# Use testnet for testing (False = Mainnet)
+USE_TESTNET = False
 
 # =============================================================================
 # BOT SETTINGS
@@ -86,5 +86,5 @@ CHECK_INTERVAL = 10
 # Maximum open positions
 MAX_OPEN_POSITIONS = 1
 
-# Logging level
-LOG_LEVEL = "INFO"
+# Logging level (DEBUG for detailed output, INFO for normal operation)
+LOG_LEVEL = "DEBUG"
