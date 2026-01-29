@@ -9,7 +9,11 @@ Configuration for HYPE Trendline Breakout Trading Bot
 # Symbol to trade
 SYMBOL = "HYPE"
 
-# Timeframe in minutes
+# Timeframes to monitor (in minutes)
+# Bot will check all timeframes for setups
+TIMEFRAMES = [1, 5]  # 1-minute and 5-minute
+
+# Legacy single timeframe (for backward compatibility)
 TIMEFRAME = 5
 
 # Direction: "long" only for now

@@ -72,8 +72,11 @@ class TrendlineBreakoutBot:
         self.is_running = False
         self.last_signal_time = None
 
+        # Get timeframes to monitor
+        self.timeframes = getattr(config, 'TIMEFRAMES', [config.TIMEFRAME])
+
         logger.info(f"Symbol: {config.SYMBOL}")
-        logger.info(f"Timeframe: {config.TIMEFRAME}m")
+        logger.info(f"Timeframes: {self.timeframes} minutes")
         logger.info(f"Risk per trade: {config.RISK_PER_TRADE * 100}%")
         logger.info(f"Leverage: {config.LEVERAGE}x")
         logger.info(f"Using {'Testnet' if config.USE_TESTNET else 'Mainnet'}")
@@ -113,15 +116,33 @@ class TrendlineBreakoutBot:
             self._look_for_entry()
 
     def _look_for_entry(self):
-        """Look for new trade entry"""
+        """Look for new trade entry across all timeframes"""
         logger.debug("Looking for entry signal...")
 
-        # Fetch candle data
-        df = self.data_fetcher.get_candles()
+        # Check each timeframe for setups
+        for timeframe in self.timeframes:
+            result = self._check_timeframe(timeframe)
+
+            if result and result['setup'] and result['setup']['status'] == 'breakout':
+                # Found a breakout! Process it
+                self._process_breakout(result['setup'], result['df'], timeframe)
+                return  # Only take one trade at a time
+
+    def _check_timeframe(self, timeframe: int):
+        """Check a specific timeframe for trendline setup"""
+        interval = self._minutes_to_interval(timeframe)
+        logger.debug(f"Checking {timeframe}m timeframe...")
+
+        # Fetch candle data for this timeframe
+        df = self.data_fetcher.get_candles(
+            symbol=config.SYMBOL,
+            interval=interval,
+            limit=config.CANDLES_TO_ANALYZE
+        )
 
         if df.empty or len(df) < config.CANDLES_TO_ANALYZE // 2:
-            logger.warning("Not enough candle data")
-            return
+            logger.warning(f"Not enough candle data for {timeframe}m")
+            return None
 
         # Add indicators
         df = self.data_fetcher.add_indicators(df)
@@ -130,8 +151,8 @@ class TrendlineBreakoutBot:
         setup = analyze_trendline_setup(df)
 
         if setup is None:
-            logger.debug("No valid trendline found")
-            return
+            logger.debug(f"[{timeframe}m] No valid trendline found")
+            return None
 
         if setup['status'] == 'monitoring':
             tl_price = setup['current_trendline_price']
@@ -139,16 +160,25 @@ class TrendlineBreakoutBot:
             distance = (current_price - tl_price) / tl_price * 100
 
             logger.info(
-                f"Monitoring trendline | "
+                f"[{timeframe}m] Monitoring trendline | "
                 f"TL Price: {tl_price:.4f} | "
                 f"Current: {current_price:.4f} | "
                 f"Distance: {distance:.2f}%"
             )
-            return
 
+        return {'setup': setup, 'df': df}
+
+    def _minutes_to_interval(self, minutes: int) -> str:
+        """Convert minutes to interval string"""
+        intervals = {1: "1m", 5: "5m", 15: "15m", 60: "1h", 240: "4h", 1440: "1d"}
+        return intervals.get(minutes, "5m")
+
+    def _process_breakout(self, setup: dict, df, timeframe: int):
+        """Process a breakout signal"""
         if setup['status'] == 'breakout':
             logger.info("=" * 40)
-            logger.info("BREAKOUT DETECTED!")
+            logger.info(f"BREAKOUT DETECTED! [{timeframe}m]")
+            logger.info(f"Timeframe: {timeframe} minutes")
             logger.info(f"Entry: {setup['entry_price']:.4f}")
             logger.info(f"SL: {setup['stop_loss']:.4f}")
             logger.info(f"TP: {setup['take_profit']:.4f}")
