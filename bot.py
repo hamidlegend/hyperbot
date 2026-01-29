@@ -26,14 +26,64 @@ from colors import (
 # Load environment variables
 load_dotenv()
 
-# Setup logging
+# Import colors and setup colored logging
+from colors import Colors
+C = Colors
+
+# Custom colored formatter
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter with colors for different log levels"""
+
+    COLORS = {
+        'DEBUG': Colors.DIM,
+        'INFO': Colors.BRIGHT_CYAN,
+        'WARNING': Colors.BRIGHT_YELLOW,
+        'ERROR': Colors.BRIGHT_RED,
+        'CRITICAL': Colors.BG_RED + Colors.BRIGHT_WHITE,
+    }
+
+    def format(self, record):
+        # Color the level name
+        color = self.COLORS.get(record.levelname, Colors.RESET)
+        record.levelname = f"{color}{record.levelname:8}{Colors.RESET}"
+
+        # Color the logger name
+        record.name = f"{Colors.MAGENTA}{record.name}{Colors.RESET}"
+
+        # Color the message based on content
+        msg = record.getMessage()
+        if 'BREAKOUT' in msg:
+            record.msg = f"{Colors.BRIGHT_GREEN}{Colors.BOLD}{msg}{Colors.RESET}"
+        elif 'Entry:' in msg or 'SL:' in msg or 'TP:' in msg:
+            record.msg = f"{Colors.BRIGHT_CYAN}{msg}{Colors.RESET}"
+        elif 'ERROR' in msg or 'Failed' in msg:
+            record.msg = f"{Colors.BRIGHT_RED}{msg}{Colors.RESET}"
+        elif 'Monitoring' in msg:
+            record.msg = f"{Colors.YELLOW}{msg}{Colors.RESET}"
+        elif '[1m]' in msg:
+            record.msg = f"{Colors.BRIGHT_YELLOW}{msg}{Colors.RESET}"
+        elif '[5m]' in msg:
+            record.msg = f"{Colors.BRIGHT_BLUE}{msg}{Colors.RESET}"
+        elif 'Position' in msg or 'Trade' in msg:
+            record.msg = f"{Colors.BRIGHT_MAGENTA}{msg}{Colors.RESET}"
+
+        return super().format(record)
+
+
+# Setup logging with colors
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(ColoredFormatter(
+    f'{Colors.DIM}%(asctime)s{Colors.RESET} - %(name)s - %(levelname)s - %(message)s'
+))
+
+file_handler = logging.FileHandler('bot.log')
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('bot.log')
-    ]
+    handlers=[console_handler, file_handler]
 )
 logger = logging.getLogger('TrendlineBot')
 
@@ -164,11 +214,18 @@ class TrendlineBreakoutBot:
             current_price = setup['current_price']
             distance = (current_price - tl_price) / tl_price * 100
 
-            logger.info(
-                f"[{timeframe}m] Monitoring trendline | "
-                f"TL Price: {tl_price:.4f} | "
-                f"Current: {current_price:.4f} | "
-                f"Distance: {distance:.2f}%"
+            # Color based on timeframe
+            tf_color = C.BRIGHT_YELLOW if timeframe == 1 else C.BRIGHT_BLUE
+            # Color based on distance
+            dist_color = C.BRIGHT_GREEN if distance > 0 else C.BRIGHT_RED
+            dist_sign = "+" if distance > 0 else ""
+
+            print(
+                f"  {tf_color}[{timeframe}m]{C.RESET} "
+                f"{C.DIM}Monitoring{C.RESET} │ "
+                f"TL: {C.CYAN}${tl_price:.4f}{C.RESET} │ "
+                f"Price: {C.WHITE}${current_price:.4f}{C.RESET} │ "
+                f"Distance: {dist_color}{dist_sign}{distance:.2f}%{C.RESET}"
             )
 
         return {'setup': setup, 'df': df}
@@ -181,13 +238,16 @@ class TrendlineBreakoutBot:
     def _process_breakout(self, setup: dict, df, timeframe: int):
         """Process a breakout signal"""
         if setup['status'] == 'breakout':
-            logger.info("=" * 40)
-            logger.info(f"BREAKOUT DETECTED! [{timeframe}m]")
-            logger.info(f"Timeframe: {timeframe} minutes")
-            logger.info(f"Entry: {setup['entry_price']:.4f}")
-            logger.info(f"SL: {setup['stop_loss']:.4f}")
-            logger.info(f"TP: {setup['take_profit']:.4f}")
-            logger.info(f"Risk: {setup['risk_percent']:.2%}")
+            # Print colorful breakout banner
+            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+            print(f"  🚀 BREAKOUT DETECTED! [{timeframe}m] 🚀")
+            print(f"{'═' * 60}{C.RESET}")
+            print(f"  {C.WHITE}Timeframe:{C.RESET}  {C.BRIGHT_YELLOW}{timeframe} minutes{C.RESET}")
+            print(f"  {C.WHITE}Entry:{C.RESET}      {C.BRIGHT_CYAN}${setup['entry_price']:.4f}{C.RESET}")
+            print(f"  {C.WHITE}Stop Loss:{C.RESET}  {C.BRIGHT_RED}${setup['stop_loss']:.4f}{C.RESET}")
+            print(f"  {C.WHITE}Take Profit:{C.RESET}{C.BRIGHT_GREEN}${setup['take_profit']:.4f}{C.RESET}")
+            print(f"  {C.WHITE}Risk:{C.RESET}       {C.YELLOW}{setup['risk_percent']:.2%}{C.RESET}")
+            print(f"{C.BRIGHT_GREEN}{'═' * 60}{C.RESET}\n")
 
             # Apply filters
             passed, reason = apply_filters(df, setup)
@@ -217,22 +277,24 @@ class TrendlineBreakoutBot:
 
     def _execute_trade(self, params):
         """Execute a trade"""
-        logger.info("=" * 40)
-        logger.info("EXECUTING TRADE")
-        logger.info(f"Symbol: {params.symbol}")
-        logger.info(f"Direction: {params.direction}")
-        logger.info(f"Size: {params.position_size}")
-        logger.info(f"Entry: {params.entry_price:.4f}")
-        logger.info(f"SL: {params.stop_loss:.4f}")
-        logger.info(f"TP: {params.take_profit:.4f}")
-        logger.info(f"Risk Amount: ${params.risk_amount:.2f}")
+        print(f"\n{C.BRIGHT_CYAN}{'═' * 60}")
+        print(f"  📊 EXECUTING TRADE")
+        print(f"{'═' * 60}{C.RESET}")
+        print(f"  {C.WHITE}Symbol:{C.RESET}      {C.BRIGHT_WHITE}{params.symbol}{C.RESET}")
+        print(f"  {C.WHITE}Direction:{C.RESET}   {C.BRIGHT_GREEN}▲ {params.direction.upper()}{C.RESET}")
+        print(f"  {C.WHITE}Size:{C.RESET}        {C.BRIGHT_CYAN}{params.position_size} {params.symbol}{C.RESET}")
+        print(f"  {C.WHITE}Entry:{C.RESET}       {C.BRIGHT_WHITE}${params.entry_price:.4f}{C.RESET}")
+        print(f"  {C.WHITE}Stop Loss:{C.RESET}   {C.BRIGHT_RED}${params.stop_loss:.4f}{C.RESET}")
+        print(f"  {C.WHITE}Take Profit:{C.RESET} {C.BRIGHT_GREEN}${params.take_profit:.4f}{C.RESET}")
+        print(f"  {C.WHITE}Risk Amount:{C.RESET} {C.YELLOW}${params.risk_amount:.2f}{C.RESET}")
+        print(f"{C.BRIGHT_CYAN}{'═' * 60}{C.RESET}")
 
         # Open position
         response = self.position_manager.open_position(params)
 
         if response.get('status') == 'ok':
             self.last_signal_time = datetime.now()
-            logger.info("Trade executed successfully!")
+            print(f"\n  {C.BRIGHT_GREEN}✓ Trade executed successfully!{C.RESET}\n")
         else:
             logger.error(f"Trade execution failed: {response}")
 
@@ -247,20 +309,24 @@ class TrendlineBreakoutBot:
         position = status.get('position', {})
 
         if status['status'] == 'sl_hit':
-            logger.info("=" * 40)
-            logger.info("STOP LOSS HIT")
+            print(f"\n{C.BRIGHT_RED}{'═' * 60}")
+            print(f"  ✗ STOP LOSS HIT")
+            print(f"{'═' * 60}{C.RESET}\n")
             self.position_manager.close_position(reason="Stop loss hit")
             return
 
         if status['status'] == 'tp_hit':
-            logger.info("=" * 40)
-            logger.info("TAKE PROFIT HIT")
+            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+            print(f"  ★ TAKE PROFIT HIT! 🎉")
+            print(f"{'═' * 60}{C.RESET}\n")
             self.position_manager.close_position(reason="Take profit hit")
             return
 
         # Position still open
         pnl = status.get('unrealized_pnl', 0)
-        logger.debug(f"Position open | PnL: ${pnl:.2f}")
+        pnl_color = C.BRIGHT_GREEN if pnl >= 0 else C.BRIGHT_RED
+        pnl_sign = "+" if pnl >= 0 else ""
+        print(f"  {C.DIM}Position open{C.RESET} │ PnL: {pnl_color}{pnl_sign}${pnl:.2f}{C.RESET}")
 
     def get_status(self) -> dict:
         """Get current bot status"""
