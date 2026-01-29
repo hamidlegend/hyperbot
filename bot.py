@@ -242,15 +242,99 @@ class TrendlineBreakoutBot:
         }
 
 
+def verify_account(client, private_key: str) -> bool:
+    """
+    Verify account connection and trading capability at startup
+
+    Args:
+        client: HyperliquidClient instance
+        private_key: Private key string
+
+    Returns:
+        True if account is ready for trading
+    """
+    print("\n" + "=" * 60)
+    print("  ACCOUNT VERIFICATION")
+    print("=" * 60)
+
+    # Check 1: Private key
+    if not private_key:
+        print("\n  [X] PRIVATE_KEY not found!")
+        print("      Create .env file with: PRIVATE_KEY=your_key_here")
+        return False
+    else:
+        masked = f"{private_key[:6]}...{private_key[-4:]}"
+        print(f"\n  [OK] Private Key: {masked}")
+
+    # Check 2: API Connection
+    try:
+        mids = client.get_all_mids()
+        if "HYPE" in mids:
+            print(f"  [OK] API Connected - HYPE Price: ${float(mids['HYPE']):.4f}")
+        else:
+            print("  [X] HYPE not found on exchange!")
+            return False
+    except Exception as e:
+        print(f"  [X] API Connection Failed: {e}")
+        return False
+
+    # Check 3: Account Access
+    try:
+        user_state = client.get_user_state()
+        if not user_state:
+            print("  [X] Could not access account!")
+            return False
+
+        margin = user_state.get("marginSummary", {})
+        balance = float(margin.get("accountValue", 0))
+        print(f"  [OK] Account Connected - Balance: ${balance:.2f}")
+
+        if balance < 1:
+            print("  [!] WARNING: Very low balance!")
+
+    except Exception as e:
+        print(f"  [X] Account Access Failed: {e}")
+        print("      Check your private key is correct")
+        return False
+
+    # Check 4: Set leverage
+    try:
+        client.set_leverage(config.SYMBOL, config.LEVERAGE)
+        print(f"  [OK] Leverage Set: {config.LEVERAGE}x")
+    except Exception as e:
+        print(f"  [!] Could not set leverage: {e}")
+        print("      (OK if you have open positions)")
+
+    print("\n" + "=" * 60)
+    print(f"  ACCOUNT READY FOR TRADING!")
+    print(f"  Wallet: {client.account_address}")
+    print("=" * 60 + "\n")
+
+    return True
+
+
 def main():
     """Main entry point"""
     # Load credentials from environment
-    private_key = os.getenv('HYPERLIQUID_PRIVATE_KEY')
-    account_address = os.getenv('HYPERLIQUID_ACCOUNT_ADDRESS')
+    private_key = os.getenv('PRIVATE_KEY') or os.getenv('HYPERLIQUID_PRIVATE_KEY')
+    account_address = os.getenv('WALLET_ADDRESS') or os.getenv('HYPERLIQUID_ACCOUNT_ADDRESS')
 
-    if not private_key:
-        logger.warning("No private key found. Running in read-only mode.")
-        logger.warning("Set HYPERLIQUID_PRIVATE_KEY in .env file for trading")
+    # Create client first to verify account
+    logger.info("Checking account connection...")
+
+    try:
+        client = HyperliquidClient(
+            private_key=private_key,
+            account_address=account_address
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize client: {e}")
+        sys.exit(1)
+
+    # Verify account before starting
+    if not verify_account(client, private_key):
+        logger.error("Account verification failed! Cannot start trading.")
+        sys.exit(1)
 
     # Create and run bot
     bot = TrendlineBreakoutBot(
