@@ -278,7 +278,7 @@ def verify_account(client, private_key: str) -> bool:
         print(f"  [X] API Connection Failed: {e}")
         return False
 
-    # Check 3: Account Access
+    # Check 3: Account Access & Balance
     try:
         user_state = client.get_user_state()
         if not user_state:
@@ -287,10 +287,38 @@ def verify_account(client, private_key: str) -> bool:
 
         margin = user_state.get("marginSummary", {})
         balance = float(margin.get("accountValue", 0))
-        print(f"  [OK] Account Connected - Balance: ${balance:.2f}")
+        margin_used = float(margin.get("totalMarginUsed", 0))
+        available = balance - margin_used
 
-        if balance < 1:
-            print("  [!] WARNING: Very low balance!")
+        print(f"\n  [OK] Account Connected")
+        print(f"      ┌─────────────────────────────────")
+        print(f"      │ Total Balance:    ${balance:.2f}")
+        print(f"      │ Margin Used:      ${margin_used:.2f}")
+        print(f"      │ Available:        ${available:.2f}")
+        print(f"      └─────────────────────────────────")
+
+        # Check minimum balance for trading
+        # With 2% risk and 5x leverage, minimum useful balance is ~$10
+        min_balance = 10.0
+        if balance < min_balance:
+            print(f"\n  [X] Balance too low for trading!")
+            print(f"      Minimum recommended: ${min_balance:.2f}")
+            return False
+
+        # Calculate max position size for reference
+        hype_price = float(client.get_all_mids().get("HYPE", 0))
+        if hype_price > 0:
+            risk_amount = balance * config.RISK_PER_TRADE
+            # Rough estimate assuming 2% stop loss distance
+            max_position_value = risk_amount / 0.02 * config.LEVERAGE
+            max_hype_size = max_position_value / hype_price
+
+            print(f"\n      Trading Parameters:")
+            print(f"      ┌─────────────────────────────────")
+            print(f"      │ Risk per Trade:   {config.RISK_PER_TRADE*100:.1f}% (${risk_amount:.2f})")
+            print(f"      │ Max Position:     ~{max_hype_size:.2f} HYPE")
+            print(f"      │ Max Value:        ~${max_position_value:.2f}")
+            print(f"      └─────────────────────────────────")
 
     except Exception as e:
         print(f"  [X] Account Access Failed: {e}")
