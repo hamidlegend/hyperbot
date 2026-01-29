@@ -17,6 +17,11 @@ from data_fetcher import DataFetcher
 from trendline import analyze_trendline_setup
 from filters import apply_filters
 from risk_manager import RiskManager, PositionManager
+from colors import (
+    Colors, success, error, warning, info, highlight, bold,
+    price, percent, banner, box, breakout_alert, trade_executed,
+    stop_loss_hit, take_profit_hit, monitoring, status_ok, status_fail
+)
 
 # Load environment variables
 load_dotenv()
@@ -275,44 +280,40 @@ class TrendlineBreakoutBot:
 def verify_account(client, private_key: str) -> bool:
     """
     Verify account connection and trading capability at startup
-
-    Args:
-        client: HyperliquidClient instance
-        private_key: Private key string
-
-    Returns:
-        True if account is ready for trading
     """
-    print("\n" + "=" * 60)
-    print("  ACCOUNT VERIFICATION")
-    print("=" * 60)
+    C = Colors
+
+    print(f"\n{C.BRIGHT_CYAN}{'═' * 60}{C.RESET}")
+    print(f"{C.BRIGHT_WHITE}{C.BOLD}  🔐 ACCOUNT VERIFICATION{C.RESET}")
+    print(f"{C.BRIGHT_CYAN}{'═' * 60}{C.RESET}")
 
     # Check 1: Private key
     if not private_key:
-        print("\n  [X] PRIVATE_KEY not found!")
-        print("      Create .env file with: PRIVATE_KEY=your_key_here")
+        print(f"\n  {C.BRIGHT_RED}[✗] PRIVATE_KEY not found!{C.RESET}")
+        print(f"      Create .env file with: PRIVATE_KEY=your_key_here")
         return False
     else:
         masked = f"{private_key[:6]}...{private_key[-4:]}"
-        print(f"\n  [OK] Private Key: {masked}")
+        print(f"\n  {C.BRIGHT_GREEN}[✓]{C.RESET} Private Key: {C.CYAN}{masked}{C.RESET}")
 
     # Check 2: API Connection
     try:
         mids = client.get_all_mids()
         if "HYPE" in mids:
-            print(f"  [OK] API Connected - HYPE Price: ${float(mids['HYPE']):.4f}")
+            hype_price = float(mids['HYPE'])
+            print(f"  {C.BRIGHT_GREEN}[✓]{C.RESET} API Connected - HYPE: {C.BRIGHT_CYAN}${hype_price:.4f}{C.RESET}")
         else:
-            print("  [X] HYPE not found on exchange!")
+            print(f"  {C.BRIGHT_RED}[✗] HYPE not found on exchange!{C.RESET}")
             return False
     except Exception as e:
-        print(f"  [X] API Connection Failed: {e}")
+        print(f"  {C.BRIGHT_RED}[✗] API Connection Failed: {e}{C.RESET}")
         return False
 
     # Check 3: Account Access & Balance
     try:
         user_state = client.get_user_state()
         if not user_state:
-            print("  [X] Could not access account!")
+            print(f"  {C.BRIGHT_RED}[✗] Could not access account!{C.RESET}")
             return False
 
         margin = user_state.get("marginSummary", {})
@@ -320,53 +321,47 @@ def verify_account(client, private_key: str) -> bool:
         margin_used = float(margin.get("totalMarginUsed", 0))
         available = balance - margin_used
 
-        print(f"\n  [OK] Account Connected")
-        print(f"      ┌─────────────────────────────────")
-        print(f"      │ Total Balance:    ${balance:.2f}")
-        print(f"      │ Margin Used:      ${margin_used:.2f}")
-        print(f"      │ Available:        ${available:.2f}")
-        print(f"      └─────────────────────────────────")
+        print(f"\n  {C.BRIGHT_GREEN}[✓]{C.RESET} Account Connected")
+        print(f"      {C.CYAN}┌{'─' * 35}{C.RESET}")
+        print(f"      {C.CYAN}│{C.RESET} Total Balance:  {C.BRIGHT_GREEN}${balance:.2f}{C.RESET}")
+        print(f"      {C.CYAN}│{C.RESET} Margin Used:    {C.YELLOW}${margin_used:.2f}{C.RESET}")
+        print(f"      {C.CYAN}│{C.RESET} Available:      {C.BRIGHT_CYAN}${available:.2f}{C.RESET}")
+        print(f"      {C.CYAN}└{'─' * 35}{C.RESET}")
 
-        # Check minimum balance for trading
-        # With 2% risk and 5x leverage, minimum useful balance is ~$10
         min_balance = 10.0
         if balance < min_balance:
-            print(f"\n  [X] Balance too low for trading!")
+            print(f"\n  {C.BRIGHT_RED}[✗] Balance too low for trading!{C.RESET}")
             print(f"      Minimum recommended: ${min_balance:.2f}")
             return False
 
-        # Calculate max position size for reference
         hype_price = float(client.get_all_mids().get("HYPE", 0))
         if hype_price > 0:
             risk_amount = balance * config.RISK_PER_TRADE
-            # Rough estimate assuming 2% stop loss distance
             max_position_value = risk_amount / 0.02 * config.LEVERAGE
             max_hype_size = max_position_value / hype_price
 
-            print(f"\n      Trading Parameters:")
-            print(f"      ┌─────────────────────────────────")
-            print(f"      │ Risk per Trade:   {config.RISK_PER_TRADE*100:.1f}% (${risk_amount:.2f})")
-            print(f"      │ Max Position:     ~{max_hype_size:.2f} HYPE")
-            print(f"      │ Max Value:        ~${max_position_value:.2f}")
-            print(f"      └─────────────────────────────────")
+            print(f"\n      {C.BRIGHT_WHITE}Trading Parameters:{C.RESET}")
+            print(f"      {C.MAGENTA}┌{'─' * 35}{C.RESET}")
+            print(f"      {C.MAGENTA}│{C.RESET} Risk per Trade: {C.YELLOW}{config.RISK_PER_TRADE*100:.1f}%{C.RESET} ({C.CYAN}${risk_amount:.2f}{C.RESET})")
+            print(f"      {C.MAGENTA}│{C.RESET} Max Position:   {C.BRIGHT_CYAN}~{max_hype_size:.2f} HYPE{C.RESET}")
+            print(f"      {C.MAGENTA}│{C.RESET} Max Value:      {C.BRIGHT_CYAN}~${max_position_value:.2f}{C.RESET}")
+            print(f"      {C.MAGENTA}└{'─' * 35}{C.RESET}")
 
     except Exception as e:
-        print(f"  [X] Account Access Failed: {e}")
-        print("      Check your private key is correct")
+        print(f"  {C.BRIGHT_RED}[✗] Account Access Failed: {e}{C.RESET}")
         return False
 
     # Check 4: Set leverage
     try:
         client.set_leverage(config.SYMBOL, config.LEVERAGE)
-        print(f"  [OK] Leverage Set: {config.LEVERAGE}x")
+        print(f"\n  {C.BRIGHT_GREEN}[✓]{C.RESET} Leverage Set: {C.BRIGHT_YELLOW}{config.LEVERAGE}x{C.RESET}")
     except Exception as e:
-        print(f"  [!] Could not set leverage: {e}")
-        print("      (OK if you have open positions)")
+        print(f"  {C.YELLOW}[!] Could not set leverage: {e}{C.RESET}")
 
-    print("\n" + "=" * 60)
-    print(f"  ACCOUNT READY FOR TRADING!")
-    print(f"  Wallet: {client.account_address}")
-    print("=" * 60 + "\n")
+    print(f"\n{C.BRIGHT_GREEN}{'═' * 60}{C.RESET}")
+    print(f"{C.BRIGHT_GREEN}{C.BOLD}  ✓ ACCOUNT READY FOR TRADING!{C.RESET}")
+    print(f"  {C.DIM}Wallet: {client.account_address}{C.RESET}")
+    print(f"{C.BRIGHT_GREEN}{'═' * 60}{C.RESET}\n")
 
     return True
 

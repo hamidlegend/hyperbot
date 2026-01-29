@@ -19,6 +19,8 @@ asyncio-throttle>=1.0.0
 
 # Cryptographic signing
 eth-account>=0.10.0
+eth-abi>=4.0.0
+eth-utils>=2.3.0
 
 # Environment variables
 python-dotenv>=1.0.0
