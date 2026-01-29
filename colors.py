@@ -1,6 +1,20 @@
 """
 Colorful console output utilities
 """
+import os
+import sys
+
+# Enable ANSI colors on Windows
+if sys.platform == 'win32':
+    os.system('color')
+    # Also try to enable VT100 mode
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    except:
+        pass
+
 
 # ANSI Color Codes
 class Colors:
