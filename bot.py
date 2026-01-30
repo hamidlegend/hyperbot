@@ -452,13 +452,13 @@ def verify_account(client, private_key: str) -> bool:
 
 def test_trade(client) -> bool:
     """
-    Execute a test trade to verify signing works
-    Places a limit order far from market price, then cancels it
+    Execute a test trade to verify the full trading flow works.
+    Opens a small REAL position, then closes it immediately.
     """
     C = Colors
 
     print(f"\n{C.BRIGHT_YELLOW}{'═' * 60}{C.RESET}")
-    print(f"{C.BRIGHT_YELLOW}  🧪 TEST TRADE{C.RESET}")
+    print(f"{C.BRIGHT_YELLOW}  🧪 TEST TRADE - Opening Real Position{C.RESET}")
     print(f"{C.BRIGHT_YELLOW}{'═' * 60}{C.RESET}")
 
     try:
@@ -472,28 +472,26 @@ def test_trade(client) -> bool:
 
         print(f"  {C.WHITE}Current HYPE Price:{C.RESET} {C.BRIGHT_CYAN}${current_price:.4f}{C.RESET}")
 
-        # Place a limit buy order 20% below market (won't fill)
-        test_price = round(current_price * 0.80, 2)
-        test_size = 0.1  # Minimum size
+        # Use minimum size for test
+        test_size = 0.1
 
-        print(f"  {C.WHITE}Test Order:{C.RESET} Buy {C.CYAN}0.1 HYPE{C.RESET} @ {C.CYAN}${test_price}{C.RESET} (won't fill)")
-        print(f"  {C.DIM}Placing order...{C.RESET}")
+        print(f"\n  {C.WHITE}Step 1: Opening test position{C.RESET}")
+        print(f"  {C.DIM}Buying {test_size} HYPE (market order)...{C.RESET}")
 
-        # Place the test order
-        response = client.place_limit_order(
+        # Place market order to OPEN position
+        response = client.place_market_order(
             symbol="HYPE",
             is_buy=True,
-            size=test_size,
-            price=test_price
+            size=test_size
         )
 
-        print(f"  {C.DIM}Full response: {response}{C.RESET}")
+        print(f"  {C.DIM}Response: {response}{C.RESET}")
 
         # Check API status first
         if response.get('status') != 'ok':
             print(f"  {C.BRIGHT_RED}[✗] API request failed: {response}{C.RESET}")
             print(f"\n{C.BRIGHT_RED}{'═' * 60}")
-            print(f"  ✗ TEST FAILED!")
+            print(f"  ✗ TEST FAILED - API Error!")
             print(f"{'═' * 60}{C.RESET}\n")
             return False
 
@@ -505,35 +503,72 @@ def test_trade(client) -> bool:
         if not statuses:
             print(f"  {C.BRIGHT_RED}[✗] No order status in response{C.RESET}")
             print(f"\n{C.BRIGHT_RED}{'═' * 60}")
-            print(f"  ✗ TEST FAILED!")
+            print(f"  ✗ TEST FAILED - No status!")
             print(f"{'═' * 60}{C.RESET}\n")
             return False
 
         order_status = statuses[0]
         print(f"  {C.CYAN}Order status: {order_status}{C.RESET}")
 
-        # Check if order was placed (should be resting for limit order below market)
-        if 'resting' in order_status:
+        # Check if order was FILLED
+        if 'filled' in order_status:
+            fill_info = order_status['filled']
+            filled_size = fill_info.get('totalSz', '0')
+            avg_price = fill_info.get('avgPx', '0')
+
+            print(f"  {C.BRIGHT_GREEN}[✓] Position OPENED!{C.RESET}")
+            print(f"      Size: {C.BRIGHT_CYAN}{filled_size} HYPE{C.RESET}")
+            print(f"      Price: {C.BRIGHT_CYAN}${avg_price}{C.RESET}")
+
+            # Now close the position
+            print(f"\n  {C.WHITE}Step 2: Closing test position{C.RESET}")
+            print(f"  {C.DIM}Selling {filled_size} HYPE to close...{C.RESET}")
+
+            import time
+            time.sleep(1)  # Small delay
+
+            close_response = client.close_position("HYPE")
+            print(f"  {C.DIM}Close response: {close_response}{C.RESET}")
+
+            # Check close status
+            if close_response.get('status') == 'ok':
+                close_statuses = close_response.get('response', {}).get('data', {}).get('statuses', [])
+                if close_statuses and 'filled' in close_statuses[0]:
+                    close_fill = close_statuses[0]['filled']
+                    print(f"  {C.BRIGHT_GREEN}[✓] Position CLOSED!{C.RESET}")
+                    print(f"      Size: {C.BRIGHT_CYAN}{close_fill.get('totalSz')} HYPE{C.RESET}")
+                    print(f"      Price: {C.BRIGHT_CYAN}${close_fill.get('avgPx')}{C.RESET}")
+
+                    print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+                    print(f"  ✓ TEST PASSED! Full trading flow works!")
+                    print(f"{'═' * 60}{C.RESET}\n")
+                    return True
+                elif close_statuses and 'error' in close_statuses[0]:
+                    print(f"  {C.BRIGHT_RED}[✗] Close REJECTED: {close_statuses[0].get('error')}{C.RESET}")
+                else:
+                    print(f"  {C.BRIGHT_YELLOW}[?] Unexpected close status: {close_statuses}{C.RESET}")
+            else:
+                print(f"  {C.BRIGHT_RED}[✗] Close failed: {close_response}{C.RESET}")
+
+            # Position opened but close had issues
+            print(f"\n{C.BRIGHT_YELLOW}{'═' * 60}")
+            print(f"  ⚠ Position opened but close had issues - CHECK MANUALLY!")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return False
+
+        elif 'resting' in order_status:
             oid = order_status['resting'].get('oid')
-            print(f"  {C.BRIGHT_GREEN}[✓] Order placed and resting (oid: {oid}){C.RESET}")
+            print(f"  {C.BRIGHT_YELLOW}[⚠] Order RESTING (not filled): oid={oid}{C.RESET}")
+            print(f"  {C.YELLOW}Market order didn't fill - possible liquidity issue{C.RESET}")
 
-            # Cancel the order immediately
-            print(f"  {C.DIM}Cancelling test order...{C.RESET}")
-            cancel_response = client.cancel_all_orders("HYPE")
-            print(f"  {C.BRIGHT_GREEN}[✓] Order cancelled{C.RESET}")
+            # Cancel the resting order
+            print(f"  {C.DIM}Cancelling resting order...{C.RESET}")
+            client.cancel_all_orders("HYPE")
 
-            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
-            print(f"  ✓ TEST PASSED! Signing works correctly!")
+            print(f"\n{C.BRIGHT_RED}{'═' * 60}")
+            print(f"  ✗ TEST FAILED - Order didn't fill!")
             print(f"{'═' * 60}{C.RESET}\n")
-            return True
-
-        elif 'filled' in order_status:
-            # Unlikely for limit order 20% below market, but handle it
-            print(f"  {C.BRIGHT_GREEN}[✓] Order filled (unexpected but OK){C.RESET}")
-            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
-            print(f"  ✓ TEST PASSED! Signing works correctly!")
-            print(f"{'═' * 60}{C.RESET}\n")
-            return True
+            return False
 
         elif 'error' in order_status:
             error_msg = order_status.get('error', 'Unknown error')
@@ -545,10 +580,13 @@ def test_trade(client) -> bool:
                 print(f"  {C.YELLOW}The wallet address derived from signature doesn't match.{C.RESET}")
             elif 'margin' in error_msg.lower():
                 print(f"\n  {C.BRIGHT_YELLOW}Margin Issue!{C.RESET}")
-                print(f"  {C.YELLOW}Check your account balance and margin.{C.RESET}")
+                print(f"  {C.YELLOW}Not enough margin for test trade.{C.RESET}")
+            elif 'size' in error_msg.lower():
+                print(f"\n  {C.BRIGHT_YELLOW}Size Issue!{C.RESET}")
+                print(f"  {C.YELLOW}Order size too small or invalid.{C.RESET}")
 
             print(f"\n{C.BRIGHT_RED}{'═' * 60}")
-            print(f"  ✗ TEST FAILED!")
+            print(f"  ✗ TEST FAILED - Order rejected!")
             print(f"{'═' * 60}{C.RESET}\n")
             return False
 
@@ -564,7 +602,7 @@ def test_trade(client) -> bool:
         import traceback
         traceback.print_exc()
         print(f"\n{C.BRIGHT_RED}{'═' * 60}")
-        print(f"  ✗ TEST FAILED!")
+        print(f"  ✗ TEST FAILED - Exception!")
         print(f"{'═' * 60}{C.RESET}\n")
         return False
 
