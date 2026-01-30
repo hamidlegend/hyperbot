@@ -186,7 +186,7 @@ class HyperliquidClient:
         order_type: str = "limit",
         reduce_only: bool = False,
         time_in_force: str = "Gtc",
-        slippage: float = 0.01
+        slippage: float = 0.05  # 5% default, matching official SDK
     ):
         """
         Place an order
@@ -382,12 +382,24 @@ class HyperliquidClient:
         raise ValueError(f"Symbol {symbol} not found")
 
     def _round_price(self, price: float, symbol: str, meta: dict) -> float:
-        """Round price to valid tick size"""
+        """
+        Round price to valid format for Hyperliquid API.
+
+        Based on official SDK: round(float(f"{px:.5g}"), 6 - sz_decimals)
+        - First format to 5 significant figures
+        - Then round to (6 - szDecimals) decimal places for perps
+        """
+        sz_decimals = 3  # default
         for asset in meta["universe"]:
             if asset["name"] == symbol:
-                # Use 5 significant figures by default
-                return round(price, 5)
-        return round(price, 5)
+                sz_decimals = asset.get("szDecimals", 3)
+                break
+
+        # First: 5 significant figures, then round to correct decimal places
+        # For perps: 6 - szDecimals decimal places
+        decimal_places = max(0, 6 - sz_decimals)
+        price_5g = float(f"{price:.5g}")
+        return round(price_5g, decimal_places)
 
     def _round_size(self, size: float, symbol: str, meta: dict) -> float:
         """Round size to valid step size"""
