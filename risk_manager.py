@@ -254,6 +254,48 @@ class PositionManager:
             response['filled_size'] = filled_size
             response['avg_price'] = avg_price
 
+            # Place TP/SL orders on exchange
+            is_long = params.direction == "long"
+            logger.info(f"Placing TP/SL orders: SL=${params.stop_loss}, TP=${params.take_profit}")
+
+            try:
+                tp_sl_response = self.client.place_tp_sl_orders(
+                    symbol=params.symbol,
+                    is_long=is_long,
+                    size=filled_size,
+                    stop_loss=params.stop_loss,
+                    take_profit=params.take_profit
+                )
+
+                # Check SL order
+                sl_resp = tp_sl_response.get('sl', {})
+                if sl_resp.get('status') == 'ok':
+                    sl_statuses = sl_resp.get('response', {}).get('data', {}).get('statuses', [])
+                    if sl_statuses and 'resting' in sl_statuses[0]:
+                        sl_oid = sl_statuses[0]['resting'].get('oid')
+                        logger.info(f"✓ Stop Loss set @ ${params.stop_loss} (oid: {sl_oid})")
+                        response['sl_oid'] = sl_oid
+                    elif sl_statuses and 'error' in sl_statuses[0]:
+                        logger.error(f"✗ SL order rejected: {sl_statuses[0].get('error')}")
+                else:
+                    logger.error(f"✗ SL order failed: {sl_resp}")
+
+                # Check TP order
+                tp_resp = tp_sl_response.get('tp', {})
+                if tp_resp.get('status') == 'ok':
+                    tp_statuses = tp_resp.get('response', {}).get('data', {}).get('statuses', [])
+                    if tp_statuses and 'resting' in tp_statuses[0]:
+                        tp_oid = tp_statuses[0]['resting'].get('oid')
+                        logger.info(f"✓ Take Profit set @ ${params.take_profit} (oid: {tp_oid})")
+                        response['tp_oid'] = tp_oid
+                    elif tp_statuses and 'error' in tp_statuses[0]:
+                        logger.error(f"✗ TP order rejected: {tp_statuses[0].get('error')}")
+                else:
+                    logger.error(f"✗ TP order failed: {tp_resp}")
+
+            except Exception as e:
+                logger.error(f"Failed to place TP/SL orders: {e}")
+
         elif 'resting' in order_status:
             # Order is sitting in orderbook, not filled
             oid = order_status['resting'].get('oid')
