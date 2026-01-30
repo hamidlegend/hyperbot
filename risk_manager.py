@@ -191,7 +191,7 @@ class PositionManager:
             params: TradeParams for the trade
 
         Returns:
-            Order response
+            Order response with 'filled' key indicating if order was actually filled
         """
         # Set leverage first
         logger.info(f"Setting leverage to {params.leverage}x")
@@ -211,17 +211,68 @@ class PositionManager:
             size=params.position_size
         )
 
-        if response.get('status') == 'ok':
+        # Log full response for debugging
+        logger.debug(f"Full API response: {response}")
+
+        # Check if API request was successful
+        if response.get('status') != 'ok':
+            logger.error(f"API request failed: {response}")
+            response['filled'] = False
+            return response
+
+        # Check the actual order status in response.response.data.statuses
+        order_response = response.get('response', {})
+        order_data = order_response.get('data', {})
+        statuses = order_data.get('statuses', [])
+
+        if not statuses:
+            logger.error(f"No order status in response: {response}")
+            response['filled'] = False
+            return response
+
+        # Check first order status (we only place one order)
+        order_status = statuses[0]
+        logger.info(f"Order status: {order_status}")
+
+        # Check if order was filled
+        if 'filled' in order_status:
+            fill_info = order_status['filled']
+            filled_size = float(fill_info.get('totalSz', 0))
+            avg_price = float(fill_info.get('avgPx', 0))
+
+            logger.info(f"✓ Order FILLED: {filled_size} @ ${avg_price}")
+
             # Store trade info
             self.active_trades[params.symbol] = {
                 'params': params,
                 'entry_time': response.get('timestamp'),
-                'status': 'open'
+                'status': 'open',
+                'filled_size': filled_size,
+                'avg_price': avg_price
             }
+            response['filled'] = True
+            response['filled_size'] = filled_size
+            response['avg_price'] = avg_price
 
-            logger.info(f"Position opened successfully")
+        elif 'resting' in order_status:
+            # Order is sitting in orderbook, not filled
+            oid = order_status['resting'].get('oid')
+            logger.warning(f"⚠ Order RESTING (not filled), oid: {oid}")
+            logger.warning("Market order should not rest - possible liquidity issue")
+            response['filled'] = False
+            response['resting_oid'] = oid
+
+        elif 'error' in order_status:
+            # Order was rejected
+            error_msg = order_status.get('error', 'Unknown error')
+            logger.error(f"✗ Order REJECTED: {error_msg}")
+            response['filled'] = False
+            response['error_message'] = error_msg
+
         else:
-            logger.error(f"Failed to open position: {response}")
+            # Unknown status
+            logger.warning(f"Unknown order status: {order_status}")
+            response['filled'] = False
 
         return response
 
@@ -241,10 +292,35 @@ class PositionManager:
 
         response = self.client.close_position(symbol)
 
-        if response.get('status') == 'ok':
+        # Log full response
+        logger.debug(f"Close position response: {response}")
+
+        # Check if it's a "no position" message
+        if response.get('message') == 'No position to close':
+            logger.info("No position to close")
             if symbol in self.active_trades:
                 del self.active_trades[symbol]
-            logger.info("Position closed successfully")
+            return response
+
+        # Check actual order status
+        if response.get('status') == 'ok':
+            order_response = response.get('response', {})
+            order_data = order_response.get('data', {})
+            statuses = order_data.get('statuses', [])
+
+            if statuses:
+                order_status = statuses[0]
+                if 'filled' in order_status:
+                    fill_info = order_status['filled']
+                    logger.info(f"✓ Position closed: {fill_info.get('totalSz')} @ ${fill_info.get('avgPx')}")
+                    if symbol in self.active_trades:
+                        del self.active_trades[symbol]
+                elif 'error' in order_status:
+                    logger.error(f"✗ Close order rejected: {order_status.get('error')}")
+                else:
+                    logger.warning(f"Close order status: {order_status}")
+            else:
+                logger.warning(f"No status in close response: {response}")
         else:
             logger.error(f"Failed to close position: {response}")
 

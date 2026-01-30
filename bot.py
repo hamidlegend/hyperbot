@@ -292,10 +292,28 @@ class TrendlineBreakoutBot:
         # Open position
         response = self.position_manager.open_position(params)
 
-        if response.get('status') == 'ok':
+        # Check if order was actually filled (not just API success)
+        if response.get('filled'):
             self.last_signal_time = datetime.now()
-            print(f"\n  {C.BRIGHT_GREEN}✓ Trade executed successfully!{C.RESET}\n")
+            filled_size = response.get('filled_size', params.position_size)
+            avg_price = response.get('avg_price', params.entry_price)
+            print(f"\n  {C.BRIGHT_GREEN}✓ Trade FILLED!{C.RESET}")
+            print(f"    {C.WHITE}Size:{C.RESET} {C.BRIGHT_CYAN}{filled_size}{C.RESET}")
+            print(f"    {C.WHITE}Avg Price:{C.RESET} {C.BRIGHT_CYAN}${avg_price:.4f}{C.RESET}\n")
+        elif response.get('error_message'):
+            # Order was rejected
+            error_msg = response.get('error_message')
+            print(f"\n  {C.BRIGHT_RED}✗ Order REJECTED: {error_msg}{C.RESET}")
+            logger.error(f"Order rejected: {error_msg}")
+        elif response.get('resting_oid'):
+            # Order is resting (not filled for market order = problem)
+            oid = response.get('resting_oid')
+            print(f"\n  {C.BRIGHT_YELLOW}⚠ Order RESTING (not filled): oid={oid}{C.RESET}")
+            print(f"    {C.YELLOW}This shouldn't happen for market orders - check liquidity{C.RESET}")
+            logger.warning(f"Market order resting instead of filling: oid={oid}")
         else:
+            # Unknown failure
+            print(f"\n  {C.BRIGHT_RED}✗ Trade execution failed!{C.RESET}")
             logger.error(f"Trade execution failed: {response}")
 
     def _manage_position(self):
@@ -469,9 +487,35 @@ def test_trade(client) -> bool:
             price=test_price
         )
 
-        if response.get('status') == 'ok':
-            print(f"  {C.BRIGHT_GREEN}[✓] Order placed successfully!{C.RESET}")
-            print(f"  {C.DIM}Response: {response}{C.RESET}")
+        print(f"  {C.DIM}Full response: {response}{C.RESET}")
+
+        # Check API status first
+        if response.get('status') != 'ok':
+            print(f"  {C.BRIGHT_RED}[✗] API request failed: {response}{C.RESET}")
+            print(f"\n{C.BRIGHT_RED}{'═' * 60}")
+            print(f"  ✗ TEST FAILED!")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return False
+
+        # Check actual order status
+        order_response = response.get('response', {})
+        order_data = order_response.get('data', {})
+        statuses = order_data.get('statuses', [])
+
+        if not statuses:
+            print(f"  {C.BRIGHT_RED}[✗] No order status in response{C.RESET}")
+            print(f"\n{C.BRIGHT_RED}{'═' * 60}")
+            print(f"  ✗ TEST FAILED!")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return False
+
+        order_status = statuses[0]
+        print(f"  {C.CYAN}Order status: {order_status}{C.RESET}")
+
+        # Check if order was placed (should be resting for limit order below market)
+        if 'resting' in order_status:
+            oid = order_status['resting'].get('oid')
+            print(f"  {C.BRIGHT_GREEN}[✓] Order placed and resting (oid: {oid}){C.RESET}")
 
             # Cancel the order immediately
             print(f"  {C.DIM}Cancelling test order...{C.RESET}")
@@ -482,22 +526,43 @@ def test_trade(client) -> bool:
             print(f"  ✓ TEST PASSED! Signing works correctly!")
             print(f"{'═' * 60}{C.RESET}\n")
             return True
-        else:
-            print(f"  {C.BRIGHT_RED}[✗] Order failed: {response}{C.RESET}")
 
-            # Check if it's a signing error
-            error_msg = str(response.get('response', ''))
-            if 'does not exist' in error_msg:
+        elif 'filled' in order_status:
+            # Unlikely for limit order 20% below market, but handle it
+            print(f"  {C.BRIGHT_GREEN}[✓] Order filled (unexpected but OK){C.RESET}")
+            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+            print(f"  ✓ TEST PASSED! Signing works correctly!")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return True
+
+        elif 'error' in order_status:
+            error_msg = order_status.get('error', 'Unknown error')
+            print(f"  {C.BRIGHT_RED}[✗] Order REJECTED: {error_msg}{C.RESET}")
+
+            # Check for common errors
+            if 'does not exist' in error_msg.lower():
                 print(f"\n  {C.BRIGHT_RED}Signing Error!{C.RESET}")
                 print(f"  {C.YELLOW}The wallet address derived from signature doesn't match.{C.RESET}")
+            elif 'margin' in error_msg.lower():
+                print(f"\n  {C.BRIGHT_YELLOW}Margin Issue!{C.RESET}")
+                print(f"  {C.YELLOW}Check your account balance and margin.{C.RESET}")
 
             print(f"\n{C.BRIGHT_RED}{'═' * 60}")
             print(f"  ✗ TEST FAILED!")
             print(f"{'═' * 60}{C.RESET}\n")
             return False
 
+        else:
+            print(f"  {C.BRIGHT_YELLOW}[?] Unknown order status: {order_status}{C.RESET}")
+            print(f"\n{C.BRIGHT_YELLOW}{'═' * 60}")
+            print(f"  ? TEST INCONCLUSIVE")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return False
+
     except Exception as e:
         print(f"  {C.BRIGHT_RED}[✗] Error: {e}{C.RESET}")
+        import traceback
+        traceback.print_exc()
         print(f"\n{C.BRIGHT_RED}{'═' * 60}")
         print(f"  ✗ TEST FAILED!")
         print(f"{'═' * 60}{C.RESET}\n")
