@@ -1,17 +1,100 @@
 """
 Hyperliquid API Client
 Handles all communication with Hyperliquid exchange
+
+Signing implementation based on official SDK:
+https://github.com/hyperliquid-dex/hyperliquid-python-sdk
 """
 
 import json
 import time
 import requests
-import hashlib
+import msgpack
 from eth_account import Account
-from eth_account.messages import encode_defunct
-from eth_abi import encode
-from eth_utils import keccak
+from eth_account.messages import encode_typed_data
+from eth_utils import keccak, to_hex
 import config
+
+
+def address_to_bytes(address: str) -> bytes:
+    """Convert hex address to bytes"""
+    if address.startswith('0x'):
+        address = address[2:]
+    return bytes.fromhex(address)
+
+
+def action_hash(action, vault_address, nonce):
+    """
+    Create action hash using msgpack (matching official SDK)
+    """
+    # Pack action with msgpack
+    data = msgpack.packb(action)
+
+    # Append nonce as 8 bytes big endian
+    data += nonce.to_bytes(8, "big")
+
+    # Append vault address flag and address
+    if vault_address is None:
+        data += b"\x00"
+    else:
+        data += b"\x01"
+        data += address_to_bytes(vault_address)
+
+    return keccak(data)
+
+
+def construct_phantom_agent(connection_id: bytes, is_mainnet: bool) -> dict:
+    """Construct phantom agent for signing"""
+    return {
+        "source": "a" if is_mainnet else "b",
+        "connectionId": connection_id
+    }
+
+
+def sign_l1_action(wallet, action, vault_address, nonce, is_mainnet):
+    """
+    Sign an L1 action using EIP-712 typed data signing
+    This matches the official Hyperliquid SDK implementation
+    """
+    # Create action hash
+    hash_bytes = action_hash(action, vault_address, nonce)
+
+    # Construct phantom agent
+    phantom_agent = construct_phantom_agent(hash_bytes, is_mainnet)
+
+    # Create EIP-712 payload
+    data = {
+        "domain": {
+            "chainId": 1337,
+            "name": "Exchange",
+            "verifyingContract": "0x0000000000000000000000000000000000000000",
+            "version": "1",
+        },
+        "types": {
+            "Agent": [
+                {"name": "source", "type": "string"},
+                {"name": "connectionId", "type": "bytes32"},
+            ],
+            "EIP712Domain": [
+                {"name": "name", "type": "string"},
+                {"name": "version", "type": "string"},
+                {"name": "chainId", "type": "uint256"},
+                {"name": "verifyingContract", "type": "address"},
+            ],
+        },
+        "primaryType": "Agent",
+        "message": phantom_agent,
+    }
+
+    # Sign the typed data
+    structured_data = encode_typed_data(full_message=data)
+    signed = wallet.sign_message(structured_data)
+
+    return {
+        "r": to_hex(signed.r),
+        "s": to_hex(signed.s),
+        "v": signed.v
+    }
 
 
 class HyperliquidClient:
@@ -31,9 +114,6 @@ class HyperliquidClient:
         self.wallet = None
 
         if private_key:
-            # Remove 0x prefix if present
-            if private_key.startswith('0x'):
-                private_key = private_key[2:]
             self.wallet = Account.from_key(private_key)
             if not account_address:
                 self.account_address = self.wallet.address
@@ -270,14 +350,21 @@ class HyperliquidClient:
         if not self.wallet:
             raise ValueError("Private key required for exchange requests")
 
-        timestamp = int(time.time() * 1000)
+        nonce = int(time.time() * 1000)
+        is_mainnet = not config.USE_TESTNET
 
-        # Create the signature using Hyperliquid's L1 signing method
-        signature = self._sign_l1_action(action, timestamp)
+        # Sign using the official SDK method
+        signature = sign_l1_action(
+            wallet=self.wallet,
+            action=action,
+            vault_address=None,
+            nonce=nonce,
+            is_mainnet=is_mainnet
+        )
 
         payload = {
             "action": action,
-            "nonce": timestamp,
+            "nonce": nonce,
             "signature": signature,
             "vaultAddress": None
         }
@@ -286,54 +373,6 @@ class HyperliquidClient:
         response = requests.post(url, json=payload)
         response.raise_for_status()
         return response.json()
-
-    def _sign_l1_action(self, action: dict, timestamp: int):
-        """
-        Sign an action using Hyperliquid's L1 signing method
-        Uses EIP-712 typed data signing with phantom agent
-        """
-        # Hyperliquid uses a specific source identifier
-        is_mainnet = not config.USE_TESTNET
-
-        # Create the connection ID (hash of action + nonce + vault)
-        connection_id = self._construct_phantom_agent(action, timestamp, None, is_mainnet)
-
-        # Sign the phantom agent hash
-        signature = self.wallet.sign_message(encode_defunct(primitive=connection_id))
-
-        return {
-            "r": hex(signature.r),
-            "s": hex(signature.s),
-            "v": signature.v
-        }
-
-    def _construct_phantom_agent(self, action: dict, nonce: int, vault_address, is_mainnet: bool):
-        """
-        Construct the phantom agent hash for signing
-        This follows Hyperliquid's exact signing specification
-        """
-        # Hash the action
-        action_str = json.dumps(action, separators=(',', ':'), sort_keys=True)
-        action_hash = hashlib.sha256(action_str.encode()).digest()
-
-        # Encode the agent data
-        # source = "a" for mainnet, "b" for testnet
-        source = b'a' if is_mainnet else b'b'
-
-        # Construct the hash: keccak256(source || actionHash || nonce || vaultAddress)
-        if vault_address is None:
-            vault_bytes = b'\x00' * 20
-        else:
-            vault_bytes = bytes.fromhex(vault_address[2:] if vault_address.startswith('0x') else vault_address)
-
-        # Encode nonce as uint64
-        nonce_bytes = nonce.to_bytes(8, byteorder='big')
-
-        # Combine all parts
-        data = source + action_hash + nonce_bytes + vault_bytes
-
-        # Return keccak256 hash
-        return keccak(data)
 
     def _get_asset_index(self, meta: dict, symbol: str) -> int:
         """Get asset index from metadata"""
