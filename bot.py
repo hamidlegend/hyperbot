@@ -432,6 +432,78 @@ def verify_account(client, private_key: str) -> bool:
     return True
 
 
+def test_trade(client) -> bool:
+    """
+    Execute a test trade to verify signing works
+    Places a limit order far from market price, then cancels it
+    """
+    C = Colors
+
+    print(f"\n{C.BRIGHT_YELLOW}{'═' * 60}{C.RESET}")
+    print(f"{C.BRIGHT_YELLOW}  🧪 TEST TRADE{C.RESET}")
+    print(f"{C.BRIGHT_YELLOW}{'═' * 60}{C.RESET}")
+
+    try:
+        # Get current price
+        mids = client.get_all_mids()
+        current_price = float(mids.get("HYPE", 0))
+
+        if current_price == 0:
+            print(f"  {C.BRIGHT_RED}[✗] Could not get HYPE price{C.RESET}")
+            return False
+
+        print(f"  {C.WHITE}Current HYPE Price:{C.RESET} {C.BRIGHT_CYAN}${current_price:.4f}{C.RESET}")
+
+        # Place a limit buy order 20% below market (won't fill)
+        test_price = round(current_price * 0.80, 2)
+        test_size = 0.1  # Minimum size
+
+        print(f"  {C.WHITE}Test Order:{C.RESET} Buy {C.CYAN}0.1 HYPE{C.RESET} @ {C.CYAN}${test_price}{C.RESET} (won't fill)")
+        print(f"  {C.DIM}Placing order...{C.RESET}")
+
+        # Place the test order
+        response = client.place_limit_order(
+            symbol="HYPE",
+            is_buy=True,
+            size=test_size,
+            price=test_price
+        )
+
+        if response.get('status') == 'ok':
+            print(f"  {C.BRIGHT_GREEN}[✓] Order placed successfully!{C.RESET}")
+            print(f"  {C.DIM}Response: {response}{C.RESET}")
+
+            # Cancel the order immediately
+            print(f"  {C.DIM}Cancelling test order...{C.RESET}")
+            cancel_response = client.cancel_all_orders("HYPE")
+            print(f"  {C.BRIGHT_GREEN}[✓] Order cancelled{C.RESET}")
+
+            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+            print(f"  ✓ TEST PASSED! Signing works correctly!")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return True
+        else:
+            print(f"  {C.BRIGHT_RED}[✗] Order failed: {response}{C.RESET}")
+
+            # Check if it's a signing error
+            error_msg = str(response.get('response', ''))
+            if 'does not exist' in error_msg:
+                print(f"\n  {C.BRIGHT_RED}Signing Error!{C.RESET}")
+                print(f"  {C.YELLOW}The wallet address derived from signature doesn't match.{C.RESET}")
+
+            print(f"\n{C.BRIGHT_RED}{'═' * 60}")
+            print(f"  ✗ TEST FAILED!")
+            print(f"{'═' * 60}{C.RESET}\n")
+            return False
+
+    except Exception as e:
+        print(f"  {C.BRIGHT_RED}[✗] Error: {e}{C.RESET}")
+        print(f"\n{C.BRIGHT_RED}{'═' * 60}")
+        print(f"  ✗ TEST FAILED!")
+        print(f"{'═' * 60}{C.RESET}\n")
+        return False
+
+
 def main():
     """Main entry point"""
     # Load credentials from environment
@@ -453,6 +525,11 @@ def main():
     # Verify account before starting
     if not verify_account(client, private_key):
         logger.error("Account verification failed! Cannot start trading.")
+        sys.exit(1)
+
+    # Test trade to verify signing works
+    if not test_trade(client):
+        logger.error("Test trade failed! Signing may be broken.")
         sys.exit(1)
 
     # Create and run bot
