@@ -257,6 +257,121 @@ class HyperliquidClient:
             reduce_only=reduce_only
         )
 
+    def place_stop_loss(self, symbol: str, is_long: bool, size: float, trigger_price: float):
+        """
+        Place a stop-loss order for an existing position.
+
+        Args:
+            symbol: Trading pair
+            is_long: True if closing a long position, False if closing short
+            size: Position size to close
+            trigger_price: Price at which SL triggers
+
+        Returns:
+            Order response
+        """
+        meta = self.get_meta()
+        asset_index = self._get_asset_index(meta, symbol)
+
+        # Round price and size
+        trigger_price = self._round_price(trigger_price, symbol, meta)
+        size = self._round_size(size, symbol, meta)
+
+        # SL sells if long, buys if short
+        is_buy = not is_long
+
+        order = {
+            "a": asset_index,
+            "b": is_buy,
+            "p": str(trigger_price),
+            "s": str(size),
+            "r": True,  # reduce_only
+            "t": {
+                "trigger": {
+                    "triggerPx": str(trigger_price),
+                    "isMarket": True,
+                    "tpsl": "sl"
+                }
+            }
+        }
+
+        action = {
+            "type": "order",
+            "orders": [order],
+            "grouping": "na"
+        }
+
+        return self._exchange_request(action)
+
+    def place_take_profit(self, symbol: str, is_long: bool, size: float, trigger_price: float):
+        """
+        Place a take-profit order for an existing position.
+
+        Args:
+            symbol: Trading pair
+            is_long: True if closing a long position, False if closing short
+            size: Position size to close
+            trigger_price: Price at which TP triggers
+
+        Returns:
+            Order response
+        """
+        meta = self.get_meta()
+        asset_index = self._get_asset_index(meta, symbol)
+
+        # Round price and size
+        trigger_price = self._round_price(trigger_price, symbol, meta)
+        size = self._round_size(size, symbol, meta)
+
+        # TP sells if long, buys if short
+        is_buy = not is_long
+
+        order = {
+            "a": asset_index,
+            "b": is_buy,
+            "p": str(trigger_price),
+            "s": str(size),
+            "r": True,  # reduce_only
+            "t": {
+                "trigger": {
+                    "triggerPx": str(trigger_price),
+                    "isMarket": True,
+                    "tpsl": "tp"
+                }
+            }
+        }
+
+        action = {
+            "type": "order",
+            "orders": [order],
+            "grouping": "na"
+        }
+
+        return self._exchange_request(action)
+
+    def place_tp_sl_orders(self, symbol: str, is_long: bool, size: float,
+                           stop_loss: float, take_profit: float):
+        """
+        Place both TP and SL orders for a position.
+
+        Args:
+            symbol: Trading pair
+            is_long: True if long position, False if short
+            size: Position size
+            stop_loss: Stop loss price
+            take_profit: Take profit price
+
+        Returns:
+            Dict with 'sl' and 'tp' responses
+        """
+        sl_response = self.place_stop_loss(symbol, is_long, size, stop_loss)
+        tp_response = self.place_take_profit(symbol, is_long, size, take_profit)
+
+        return {
+            'sl': sl_response,
+            'tp': tp_response
+        }
+
     def cancel_order(self, symbol: str, order_id: int):
         """Cancel an order"""
         meta = self.get_meta()
