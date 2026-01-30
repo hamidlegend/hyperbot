@@ -240,7 +240,7 @@ class PositionManager:
             filled_size = float(fill_info.get('totalSz', 0))
             avg_price = float(fill_info.get('avgPx', 0))
 
-            logger.info(f"✓ Order FILLED: {filled_size} @ ${avg_price}")
+            logger.info(f"[OK] Order FILLED: {filled_size} @ ${avg_price}")
 
             # Store trade info
             self.active_trades[params.symbol] = {
@@ -273,12 +273,12 @@ class PositionManager:
                     sl_statuses = sl_resp.get('response', {}).get('data', {}).get('statuses', [])
                     if sl_statuses and 'resting' in sl_statuses[0]:
                         sl_oid = sl_statuses[0]['resting'].get('oid')
-                        logger.info(f"✓ Stop Loss set @ ${params.stop_loss} (oid: {sl_oid})")
+                        logger.info(f"[OK] Stop Loss set @ ${params.stop_loss} (oid: {sl_oid})")
                         response['sl_oid'] = sl_oid
                     elif sl_statuses and 'error' in sl_statuses[0]:
-                        logger.error(f"✗ SL order rejected: {sl_statuses[0].get('error')}")
+                        logger.error(f"[X] SL order rejected: {sl_statuses[0].get('error')}")
                 else:
-                    logger.error(f"✗ SL order failed: {sl_resp}")
+                    logger.error(f"[X] SL order failed: {sl_resp}")
 
                 # Check TP order
                 tp_resp = tp_sl_response.get('tp', {})
@@ -286,12 +286,12 @@ class PositionManager:
                     tp_statuses = tp_resp.get('response', {}).get('data', {}).get('statuses', [])
                     if tp_statuses and 'resting' in tp_statuses[0]:
                         tp_oid = tp_statuses[0]['resting'].get('oid')
-                        logger.info(f"✓ Take Profit set @ ${params.take_profit} (oid: {tp_oid})")
+                        logger.info(f"[OK] Take Profit set @ ${params.take_profit} (oid: {tp_oid})")
                         response['tp_oid'] = tp_oid
                     elif tp_statuses and 'error' in tp_statuses[0]:
-                        logger.error(f"✗ TP order rejected: {tp_statuses[0].get('error')}")
+                        logger.error(f"[X] TP order rejected: {tp_statuses[0].get('error')}")
                 else:
-                    logger.error(f"✗ TP order failed: {tp_resp}")
+                    logger.error(f"[X] TP order failed: {tp_resp}")
 
             except Exception as e:
                 logger.error(f"Failed to place TP/SL orders: {e}")
@@ -299,7 +299,7 @@ class PositionManager:
         elif 'resting' in order_status:
             # Order is sitting in orderbook, not filled
             oid = order_status['resting'].get('oid')
-            logger.warning(f"⚠ Order RESTING (not filled), oid: {oid}")
+            logger.warning(f"[!] Order RESTING (not filled), oid: {oid}")
             logger.warning("Market order should not rest - possible liquidity issue")
             response['filled'] = False
             response['resting_oid'] = oid
@@ -307,7 +307,7 @@ class PositionManager:
         elif 'error' in order_status:
             # Order was rejected
             error_msg = order_status.get('error', 'Unknown error')
-            logger.error(f"✗ Order REJECTED: {error_msg}")
+            logger.error(f"[X] Order REJECTED: {error_msg}")
             response['filled'] = False
             response['error_message'] = error_msg
 
@@ -354,11 +354,11 @@ class PositionManager:
                 order_status = statuses[0]
                 if 'filled' in order_status:
                     fill_info = order_status['filled']
-                    logger.info(f"✓ Position closed: {fill_info.get('totalSz')} @ ${fill_info.get('avgPx')}")
+                    logger.info(f"[OK] Position closed: {fill_info.get('totalSz')} @ ${fill_info.get('avgPx')}")
                     if symbol in self.active_trades:
                         del self.active_trades[symbol]
                 elif 'error' in order_status:
-                    logger.error(f"✗ Close order rejected: {order_status.get('error')}")
+                    logger.error(f"[X] Close order rejected: {order_status.get('error')}")
                 else:
                     logger.warning(f"Close order status: {order_status}")
             else:

@@ -10,10 +10,24 @@ import json
 import time
 import requests
 import msgpack
+from decimal import Decimal
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_utils import keccak, to_hex
 import config
+
+
+def float_to_wire(x: float) -> str:
+    """
+    Convert float to wire format (matching official SDK).
+    Normalizes decimal and removes trailing zeros.
+    """
+    rounded = f"{x:.8f}"
+    if rounded == "-0.00000000":
+        return "0"
+    # Normalize to remove trailing zeros
+    normalized = Decimal(rounded).normalize()
+    return f"{normalized:f}"
 
 
 def address_to_bytes(address: str) -> bytes:
@@ -221,8 +235,8 @@ class HyperliquidClient:
         order = {
             "a": asset_index,
             "b": is_buy,
-            "p": str(price),
-            "s": str(size),
+            "p": float_to_wire(price),
+            "s": float_to_wire(size),
             "r": reduce_only,
             "t": {"limit": {"tif": time_in_force}}
         }
@@ -283,12 +297,12 @@ class HyperliquidClient:
         order = {
             "a": asset_index,
             "b": is_buy,
-            "p": str(trigger_price),
-            "s": str(size),
+            "p": float_to_wire(trigger_price),
+            "s": float_to_wire(size),
             "r": True,  # reduce_only
             "t": {
                 "trigger": {
-                    "triggerPx": str(trigger_price),
+                    "triggerPx": float_to_wire(trigger_price),
                     "isMarket": True,
                     "tpsl": "sl"
                 }
@@ -329,12 +343,12 @@ class HyperliquidClient:
         order = {
             "a": asset_index,
             "b": is_buy,
-            "p": str(trigger_price),
-            "s": str(size),
+            "p": float_to_wire(trigger_price),
+            "s": float_to_wire(size),
             "r": True,  # reduce_only
             "t": {
                 "trigger": {
-                    "triggerPx": str(trigger_price),
+                    "triggerPx": float_to_wire(trigger_price),
                     "isMarket": True,
                     "tpsl": "tp"
                 }
