@@ -472,8 +472,12 @@ def test_trade(client) -> bool:
 
         print(f"  {C.WHITE}Current HYPE Price:{C.RESET} {C.BRIGHT_CYAN}${current_price:.4f}{C.RESET}")
 
-        # Use minimum size for test
-        test_size = 0.1
+        # Calculate minimum size to meet $10 minimum order value
+        min_value = 10.0
+        test_size = round((min_value / current_price) * 1.1, 2)  # Add 10% buffer
+        test_size = max(test_size, 0.4)  # At least 0.4 HYPE (~$12 at $30)
+
+        print(f"  {C.WHITE}Test Size:{C.RESET} {C.BRIGHT_CYAN}{test_size} HYPE{C.RESET} (${test_size * current_price:.2f})")
 
         print(f"\n  {C.WHITE}Step 1: Opening test position{C.RESET}")
         print(f"  {C.DIM}Buying {test_size} HYPE (market order)...{C.RESET}")
