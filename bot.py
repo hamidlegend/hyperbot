@@ -634,10 +634,10 @@ def main():
         logger.error("Account verification failed! Cannot start trading.")
         sys.exit(1)
 
-    # Test trade to verify signing works
-    if not test_trade(client):
-        logger.error("Test trade failed! Signing may be broken.")
-        sys.exit(1)
+    # Test trade disabled - uncomment to test full trading flow
+    # if not test_trade(client):
+    #     logger.error("Test trade failed! Signing may be broken.")
+    #     sys.exit(1)
 
     # Create and run bot
     bot = TrendlineBreakoutBot(
