@@ -128,6 +128,7 @@ class TrendlineBreakoutBot:
         self.last_signal_time = None
         self.last_trade_close_time = None  # Cooldown after closing position
         self.trade_cooldown_minutes = getattr(config, 'TRADE_COOLDOWN_MINUTES', 5)
+        self.had_open_position = False  # Track if we had a position
 
         # Get timeframes to monitor
         self.timeframes = getattr(config, 'TIMEFRAMES', [config.TIMEFRAME])
@@ -167,7 +168,20 @@ class TrendlineBreakoutBot:
         logger.debug(f"Tick at {datetime.now()}")
 
         # Check for existing position
-        if self.position_manager.has_open_position():
+        has_position = self.position_manager.has_open_position()
+
+        # Detect if position was closed externally (by exchange TP/SL orders)
+        if self.had_open_position and not has_position:
+            # Position was just closed - start cooldown
+            self.last_trade_close_time = datetime.now()
+            print(f"\n  {C.BRIGHT_CYAN}Position closed by exchange (TP/SL){C.RESET}")
+            print(f"  {C.DIM}Cooldown started: {self.trade_cooldown_minutes} min{C.RESET}")
+            logger.info(f"Position closed externally - cooldown started for {self.trade_cooldown_minutes} min")
+
+        # Update position tracking state
+        self.had_open_position = has_position
+
+        if has_position:
             self._manage_position()
         else:
             self._look_for_entry()
