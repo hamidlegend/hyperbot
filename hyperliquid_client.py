@@ -127,6 +127,10 @@ class HyperliquidClient:
         self.account_address = account_address
         self.wallet = None
 
+        # Cache for metadata (reduces API calls)
+        self._meta_cache = None
+        self._meta_cache_time = 0
+
         if private_key:
             self.wallet = Account.from_key(private_key)
             if not account_address:
@@ -136,9 +140,20 @@ class HyperliquidClient:
     # INFO API (Read-only)
     # =========================================================================
 
-    def get_meta(self):
-        """Get exchange metadata including all tradeable assets"""
-        return self._info_request({"type": "meta"})
+    def get_meta(self, use_cache: bool = True):
+        """
+        Get exchange metadata including all tradeable assets.
+        Cached for 5 minutes to reduce API calls.
+        """
+        cache_duration = 300  # 5 minutes
+        now = time.time()
+
+        if use_cache and self._meta_cache and (now - self._meta_cache_time) < cache_duration:
+            return self._meta_cache
+
+        self._meta_cache = self._info_request({"type": "meta"})
+        self._meta_cache_time = now
+        return self._meta_cache
 
     def get_all_mids(self):
         """Get mid prices for all assets"""
@@ -249,12 +264,23 @@ class HyperliquidClient:
 
         return self._exchange_request(action)
 
-    def place_market_order(self, symbol: str, is_buy: bool, size: float, reduce_only: bool = False):
-        """Place a market order"""
+    def place_market_order(self, symbol: str, is_buy: bool, size: float,
+                           reduce_only: bool = False, current_price: float = None):
+        """
+        Place a market order.
+
+        Args:
+            symbol: Trading pair
+            is_buy: True for buy, False for sell
+            size: Order size
+            reduce_only: True to only reduce position
+            current_price: Optional - if provided, skips get_all_mids() call for faster execution
+        """
         return self.place_order(
             symbol=symbol,
             is_buy=is_buy,
             size=size,
+            price=current_price,  # Will use this if provided, else fetches mid
             order_type="market",
             reduce_only=reduce_only,
             time_in_force="Ioc"
@@ -302,8 +328,8 @@ class HyperliquidClient:
             "r": True,  # reduce_only
             "t": {
                 "trigger": {
-                    "triggerPx": float_to_wire(trigger_price),
                     "isMarket": True,
+                    "triggerPx": float_to_wire(trigger_price),
                     "tpsl": "sl"
                 }
             }
@@ -348,8 +374,8 @@ class HyperliquidClient:
             "r": True,  # reduce_only
             "t": {
                 "trigger": {
-                    "triggerPx": float_to_wire(trigger_price),
                     "isMarket": True,
+                    "triggerPx": float_to_wire(trigger_price),
                     "tpsl": "tp"
                 }
             }

@@ -208,7 +208,8 @@ class PositionManager:
         response = self.client.place_market_order(
             symbol=params.symbol,
             is_buy=is_buy,
-            size=params.position_size
+            size=params.position_size,
+            current_price=params.entry_price  # Pass price to avoid extra API call
         )
 
         # Log full response for debugging
