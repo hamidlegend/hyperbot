@@ -95,5 +95,9 @@ CHECK_INTERVAL = 5
 # Maximum open positions
 MAX_OPEN_POSITIONS = 1
 
+# Cooldown after closing a position (in minutes)
+# Prevents immediately re-entering after TP/SL hit
+TRADE_COOLDOWN_MINUTES = 5
+
 # Logging level (DEBUG for detailed output, INFO for normal operation)
 LOG_LEVEL = "DEBUG"
