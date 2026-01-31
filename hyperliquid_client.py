@@ -493,41 +493,64 @@ class HyperliquidClient:
     # HELPER METHODS
     # =========================================================================
 
-    def _info_request(self, payload: dict):
-        """Make a request to the info API"""
+    def _info_request(self, payload: dict, max_retries: int = 3):
+        """Make a request to the info API with retry logic"""
         url = f"{self.base_url}/info"
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        return response.json()
 
-    def _exchange_request(self, action: dict):
-        """Make a signed request to the exchange API"""
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, json=payload, timeout=30)
+                response.raise_for_status()
+                return response.json()
+            except (requests.exceptions.ProxyError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1, 2, 4 seconds
+                    time.sleep(wait_time)
+                    continue
+                raise
+
+    def _exchange_request(self, action: dict, max_retries: int = 3):
+        """Make a signed request to the exchange API with retry logic"""
         if not self.wallet:
             raise ValueError("Private key required for exchange requests")
 
-        nonce = int(time.time() * 1000)
+        url = f"{self.base_url}/exchange"
         is_mainnet = not config.USE_TESTNET
 
-        # Sign using the official SDK method
-        signature = sign_l1_action(
-            wallet=self.wallet,
-            action=action,
-            vault_address=None,
-            nonce=nonce,
-            is_mainnet=is_mainnet
-        )
+        for attempt in range(max_retries):
+            try:
+                # Generate fresh nonce and signature for each attempt
+                nonce = int(time.time() * 1000)
 
-        payload = {
-            "action": action,
-            "nonce": nonce,
-            "signature": signature,
-            "vaultAddress": None
-        }
+                signature = sign_l1_action(
+                    wallet=self.wallet,
+                    action=action,
+                    vault_address=None,
+                    nonce=nonce,
+                    is_mainnet=is_mainnet
+                )
 
-        url = f"{self.base_url}/exchange"
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        return response.json()
+                payload = {
+                    "action": action,
+                    "nonce": nonce,
+                    "signature": signature,
+                    "vaultAddress": None
+                }
+
+                response = requests.post(url, json=payload, timeout=30)
+                response.raise_for_status()
+                return response.json()
+
+            except (requests.exceptions.ProxyError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1, 2, 4 seconds
+                    time.sleep(wait_time)
+                    continue
+                raise
 
     def _get_asset_index(self, meta: dict, symbol: str) -> int:
         """Get asset index from metadata"""
