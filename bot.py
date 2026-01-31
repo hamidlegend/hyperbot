@@ -126,6 +126,8 @@ class TrendlineBreakoutBot:
         # State
         self.is_running = False
         self.last_signal_time = None
+        self.last_trade_close_time = None  # Cooldown after closing position
+        self.trade_cooldown_minutes = getattr(config, 'TRADE_COOLDOWN_MINUTES', 5)
 
         # Get timeframes to monitor
         self.timeframes = getattr(config, 'TIMEFRAMES', [config.TIMEFRAME])
@@ -173,6 +175,14 @@ class TrendlineBreakoutBot:
     def _look_for_entry(self):
         """Look for new trade entry across all timeframes"""
         logger.debug("Looking for entry signal...")
+
+        # Check cooldown after last trade close
+        if self.last_trade_close_time:
+            elapsed = (datetime.now() - self.last_trade_close_time).total_seconds() / 60
+            if elapsed < self.trade_cooldown_minutes:
+                remaining = self.trade_cooldown_minutes - elapsed
+                print(f"  {C.DIM}Cooldown: {remaining:.1f} min remaining after last trade{C.RESET}")
+                return
 
         # Check each timeframe for setups
         for timeframe in self.timeframes:
@@ -328,16 +338,20 @@ class TrendlineBreakoutBot:
 
         if status['status'] == 'sl_hit':
             print(f"\n{C.BRIGHT_RED}{'═' * 60}")
-            print(f"  ✗ STOP LOSS HIT")
+            print(f"  [X] STOP LOSS HIT")
             print(f"{'═' * 60}{C.RESET}\n")
             self.position_manager.close_position(reason="Stop loss hit")
+            self.last_trade_close_time = datetime.now()  # Start cooldown
+            print(f"  {C.DIM}Cooldown started: {self.trade_cooldown_minutes} min{C.RESET}")
             return
 
         if status['status'] == 'tp_hit':
             print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
-            print(f"  ★ TAKE PROFIT HIT! 🎉")
+            print(f"  [OK] TAKE PROFIT HIT!")
             print(f"{'═' * 60}{C.RESET}\n")
             self.position_manager.close_position(reason="Take profit hit")
+            self.last_trade_close_time = datetime.now()  # Start cooldown
+            print(f"  {C.DIM}Cooldown started: {self.trade_cooldown_minutes} min{C.RESET}")
             return
 
         # Position still open
