@@ -11,7 +11,7 @@ SYMBOL = "HYPE"
 
 # Timeframes to monitor (in minutes)
 # Bot will check all timeframes for setups
-TIMEFRAMES = [1, 5]  # 1-minute and 5-minute
+TIMEFRAMES = [1]  # 1-minute only (5-minute disabled)
 
 # Legacy single timeframe (for backward compatibility)
 TIMEFRAME = 5
