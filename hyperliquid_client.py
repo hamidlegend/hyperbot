@@ -238,10 +238,13 @@ class HyperliquidClient:
         asset_index = self._get_asset_index(meta, symbol)
 
         # For market orders, use aggressive limit price
-        if order_type == "market" or price is None:
+        if price is None:
             mids = self.get_all_mids()
             mid_price = float(mids[symbol])
             price = mid_price * (1 + slippage) if is_buy else mid_price * (1 - slippage)
+        elif order_type == "market":
+            # current_price was provided - apply slippage without extra API call
+            price = price * (1 + slippage) if is_buy else price * (1 - slippage)
 
         # Round price to valid tick size
         price = self._round_price(price, symbol, meta)

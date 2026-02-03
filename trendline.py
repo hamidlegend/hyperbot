@@ -328,20 +328,31 @@ def analyze_trendline_setup(df: pd.DataFrame) -> Optional[dict]:
         }
 
     # Breakout detected! Find stop loss level
-    # SL is below the most recent swing low (the low of the breakout wave)
+    # SL goes below the lowest low of the last wave (between last trendline touch and breakout)
     breakout_index = breakout['candle_index']
-    recent_swing_low = get_recent_swing_low(df, breakout_index, lookback=20)
 
-    if recent_swing_low is None:
+    # Find the lowest low between the last trendline touch point and breakout candle
+    # This is the "last wave" low that the user wants the stop below
+    last_touch_index = trendline.point2_index
+    search_start = max(0, last_touch_index)
+    search_end = breakout_index + 1
+
+    # Get the absolute lowest low in the last wave range
+    wave_slice = df.iloc[search_start:search_end]
+    if wave_slice.empty:
         return None
+
+    min_low_idx = wave_slice['low'].idxmin()
+    wave_low_price = df.iloc[min_low_idx]['low']
+
+    # Place SL slightly below the wave low (0.05% buffer)
+    stop_loss = wave_low_price * 0.9995
 
     # Calculate SL and TP
     entry_price = breakout['breakout_price']
-    stop_loss = recent_swing_low['price']
 
     # Ensure SL is below entry
     if stop_loss >= entry_price:
-        # Adjust SL to be slightly below entry
         stop_loss = entry_price * 0.995
 
     # Calculate risk
@@ -359,6 +370,6 @@ def analyze_trendline_setup(df: pd.DataFrame) -> Optional[dict]:
         'take_profit': take_profit,
         'risk': risk,
         'risk_percent': risk / entry_price,
-        'swing_low': recent_swing_low,
+        'wave_low': wave_low_price,
         'timestamp': breakout['timestamp']
     }
