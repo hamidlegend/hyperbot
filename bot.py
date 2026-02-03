@@ -130,6 +130,10 @@ class TrendlineBreakoutBot:
         self.trade_cooldown_minutes = getattr(config, 'TRADE_COOLDOWN_MINUTES', 5)
         self.had_open_position = False  # Track if we had a position
 
+        # Cache balance to avoid extra API calls during trade execution
+        self._cached_balance = None
+        self._balance_cache_time = 0
+
         # Get timeframes to monitor
         self.timeframes = getattr(config, 'TIMEFRAMES', [config.TIMEFRAME])
 
@@ -189,6 +193,17 @@ class TrendlineBreakoutBot:
     def _look_for_entry(self):
         """Look for new trade entry across all timeframes"""
         logger.debug("Looking for entry signal...")
+
+        # Refresh balance cache every 60 seconds
+        import time as _time
+        now = _time.time()
+        if self._cached_balance is None or (now - self._balance_cache_time) > 60:
+            try:
+                balance = self.client.get_balance()
+                self._cached_balance = balance['account_value']
+                self._balance_cache_time = now
+            except Exception as e:
+                logger.warning(f"Failed to refresh balance cache: {e}")
 
         # Check cooldown after last trade close
         if self.last_trade_close_time:
@@ -260,60 +275,44 @@ class TrendlineBreakoutBot:
         return intervals.get(minutes, "5m")
 
     def _process_breakout(self, setup: dict, df, timeframe: int):
-        """Process a breakout signal"""
+        """Process a breakout signal - optimized for speed"""
         if setup['status'] == 'breakout':
-            # Print colorful breakout banner
-            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
-            print(f"  🚀 BREAKOUT DETECTED! [{timeframe}m] 🚀")
-            print(f"{'═' * 60}{C.RESET}")
-            print(f"  {C.WHITE}Timeframe:{C.RESET}  {C.BRIGHT_YELLOW}{timeframe} minutes{C.RESET}")
-            print(f"  {C.WHITE}Entry:{C.RESET}      {C.BRIGHT_CYAN}${setup['entry_price']:.4f}{C.RESET}")
-            print(f"  {C.WHITE}Stop Loss:{C.RESET}  {C.BRIGHT_RED}${setup['stop_loss']:.4f}{C.RESET}")
-            print(f"  {C.WHITE}Take Profit:{C.RESET}{C.BRIGHT_GREEN}${setup['take_profit']:.4f}{C.RESET}")
-            print(f"  {C.WHITE}Risk:{C.RESET}       {C.YELLOW}{setup['risk_percent']:.2%}{C.RESET}")
-            print(f"{C.BRIGHT_GREEN}{'═' * 60}{C.RESET}\n")
-
-            # Apply filters
+            # Apply filters FIRST (before printing) - speed matters
             passed, reason = apply_filters(df, setup)
-
             if not passed:
                 logger.warning(f"Trade rejected by filters: {reason}")
                 return
 
-            logger.info(f"Filters passed: {reason}")
-
-            # Create trade parameters
-            params = self.risk_manager.create_trade_params(setup)
-
+            # Create trade parameters using cached balance
+            params = self.risk_manager.create_trade_params(
+                setup, account_balance=self._cached_balance
+            )
             if params is None:
                 logger.warning("Could not create trade parameters")
                 return
 
-            # Validate trade
+            # Validate trade (no API calls)
             is_valid, reason = self.risk_manager.validate_trade(params)
-
             if not is_valid:
                 logger.warning(f"Trade validation failed: {reason}")
                 return
 
-            # Execute trade
+            # Print breakout info
+            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+            print(f"  BREAKOUT [{timeframe}m]")
+            print(f"{'═' * 60}{C.RESET}")
+            print(f"  {C.WHITE}Entry:{C.RESET}      {C.BRIGHT_CYAN}${setup['entry_price']:.4f}{C.RESET}")
+            print(f"  {C.WHITE}Stop Loss:{C.RESET}  {C.BRIGHT_RED}${setup['stop_loss']:.4f}{C.RESET}")
+            print(f"  {C.WHITE}Take Profit:{C.RESET}{C.BRIGHT_GREEN}${setup['take_profit']:.4f}{C.RESET}")
+            print(f"  {C.WHITE}Size:{C.RESET}       {C.BRIGHT_CYAN}{params.position_size} {params.symbol}{C.RESET}")
+            print(f"{C.BRIGHT_GREEN}{'═' * 60}{C.RESET}")
+
+            # Execute trade IMMEDIATELY
             self._execute_trade(params)
 
     def _execute_trade(self, params):
-        """Execute a trade"""
-        print(f"\n{C.BRIGHT_CYAN}{'═' * 60}")
-        print(f"  📊 EXECUTING TRADE")
-        print(f"{'═' * 60}{C.RESET}")
-        print(f"  {C.WHITE}Symbol:{C.RESET}      {C.BRIGHT_WHITE}{params.symbol}{C.RESET}")
-        print(f"  {C.WHITE}Direction:{C.RESET}   {C.BRIGHT_GREEN}▲ {params.direction.upper()}{C.RESET}")
-        print(f"  {C.WHITE}Size:{C.RESET}        {C.BRIGHT_CYAN}{params.position_size} {params.symbol}{C.RESET}")
-        print(f"  {C.WHITE}Entry:{C.RESET}       {C.BRIGHT_WHITE}${params.entry_price:.4f}{C.RESET}")
-        print(f"  {C.WHITE}Stop Loss:{C.RESET}   {C.BRIGHT_RED}${params.stop_loss:.4f}{C.RESET}")
-        print(f"  {C.WHITE}Take Profit:{C.RESET} {C.BRIGHT_GREEN}${params.take_profit:.4f}{C.RESET}")
-        print(f"  {C.WHITE}Risk Amount:{C.RESET} {C.YELLOW}${params.risk_amount:.2f}{C.RESET}")
-        print(f"{C.BRIGHT_CYAN}{'═' * 60}{C.RESET}")
-
-        # Open position
+        """Execute a trade - speed optimized"""
+        # Open position FIRST, print after
         response = self.position_manager.open_position(params)
 
         # Check if order was actually filled (not just API success)

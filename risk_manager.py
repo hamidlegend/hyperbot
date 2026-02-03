@@ -132,12 +132,7 @@ class RiskManager:
     def validate_trade(self, params: TradeParams) -> tuple[bool, str]:
         """
         Validate trade parameters before execution
-
-        Args:
-            params: TradeParams to validate
-
-        Returns:
-            Tuple of (is_valid, reason)
+        No API calls here - speed is critical
         """
         # Check position size
         if params.position_size <= 0:
@@ -150,11 +145,6 @@ class RiskManager:
         # Check TP is above entry for long
         if params.direction == "long" and params.take_profit <= params.entry_price:
             return False, "Take profit must be above entry for long"
-
-        # Check risk amount is reasonable
-        balance = self.client.get_balance()
-        if params.risk_amount > balance['account_value'] * 0.1:
-            return False, "Risk amount too high (>10% of account)"
 
         return True, "Trade validated"
 
@@ -193,11 +183,8 @@ class PositionManager:
         Returns:
             Order response with 'filled' key indicating if order was actually filled
         """
-        # Set leverage first
-        logger.info(f"Setting leverage to {params.leverage}x")
-        self.client.set_leverage(params.symbol, params.leverage)
-
-        # Place market order
+        # Leverage is set once at bot startup - skip here for speed
+        # Place market order immediately
         logger.info(
             f"Opening {params.direction} position: "
             f"{params.position_size} {params.symbol} @ ~{params.entry_price}"
