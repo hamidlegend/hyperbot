@@ -361,6 +361,9 @@ def analyze_trendline_setup(df: pd.DataFrame) -> Optional[dict]:
     # TP based on R:R ratio
     take_profit = entry_price + (risk * config.RISK_REWARD_RATIO)
 
+    # Find swing lows for display
+    swing_lows = find_swing_lows(df, lookback=config.SWING_LOOKBACK)
+
     return {
         'status': 'breakout',
         'trendline': trendline,
@@ -371,5 +374,7 @@ def analyze_trendline_setup(df: pd.DataFrame) -> Optional[dict]:
         'risk': risk,
         'risk_percent': risk / entry_price,
         'wave_low': wave_low_price,
+        'swing_highs': swing_highs,
+        'swing_lows': swing_lows,
         'timestamp': breakout['timestamp']
     }

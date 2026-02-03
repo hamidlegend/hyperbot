@@ -298,17 +298,62 @@ class TrendlineBreakoutBot:
                 return
 
             # Print breakout info
-            print(f"\n{C.BRIGHT_GREEN}{'═' * 60}")
+            print(f"\n{C.BRIGHT_GREEN}{'=' * 60}")
             print(f"  BREAKOUT [{timeframe}m]")
-            print(f"{'═' * 60}{C.RESET}")
+            print(f"{'=' * 60}{C.RESET}")
             print(f"  {C.WHITE}Entry:{C.RESET}      {C.BRIGHT_CYAN}${setup['entry_price']:.4f}{C.RESET}")
             print(f"  {C.WHITE}Stop Loss:{C.RESET}  {C.BRIGHT_RED}${setup['stop_loss']:.4f}{C.RESET}")
             print(f"  {C.WHITE}Take Profit:{C.RESET}{C.BRIGHT_GREEN}${setup['take_profit']:.4f}{C.RESET}")
             print(f"  {C.WHITE}Size:{C.RESET}       {C.BRIGHT_CYAN}{params.position_size} {params.symbol}{C.RESET}")
-            print(f"{C.BRIGHT_GREEN}{'═' * 60}{C.RESET}")
+            print(f"{C.BRIGHT_GREEN}{'=' * 60}{C.RESET}")
 
             # Execute trade IMMEDIATELY
             self._execute_trade(params)
+
+            # Show swing points AFTER trade is opened (not before, to save time)
+            self._print_swing_info(setup)
+
+    def _print_swing_info(self, setup: dict):
+        """Print swing highs and lows info after trade is opened"""
+        trendline = setup.get('trendline')
+        swing_highs = setup.get('swing_highs', [])
+        swing_lows = setup.get('swing_lows', [])
+        wave_low = setup.get('wave_low')
+
+        print(f"\n  {C.BRIGHT_YELLOW}--- Swing Points ---{C.RESET}")
+
+        # Show trendline points
+        if trendline:
+            print(f"  {C.WHITE}Trendline:{C.RESET} {C.CYAN}slope={trendline.slope:.6f}, touches={trendline.num_touches}{C.RESET}")
+            print(f"    {C.DIM}Point 1: index={trendline.point1_index}, price=${trendline.point1_price:.4f}{C.RESET}")
+            print(f"    {C.DIM}Point 2: index={trendline.point2_index}, price=${trendline.point2_price:.4f}{C.RESET}")
+
+        # Show swing highs (used for trendline)
+        if swing_highs:
+            print(f"\n  {C.BRIGHT_MAGENTA}Swing Highs ({len(swing_highs)} found):{C.RESET}")
+            for i, sh in enumerate(swing_highs[-6:]):  # Last 6
+                ts = sh.get('timestamp', '')
+                ts_str = f" @ {ts}" if ts else ""
+                # Mark which ones were used for trendline
+                used = ""
+                if trendline and sh['index'] in [trendline.point1_index, trendline.point2_index]:
+                    used = f" {C.BRIGHT_GREEN}<-- trendline{C.RESET}"
+                print(f"    {C.MAGENTA}SH#{i+1}: ${sh['price']:.4f} (idx={sh['index']}){ts_str}{used}{C.RESET}")
+
+        # Show swing lows
+        if swing_lows:
+            print(f"\n  {C.BRIGHT_CYAN}Swing Lows ({len(swing_lows)} found):{C.RESET}")
+            for i, sl in enumerate(swing_lows[-6:]):  # Last 6
+                ts = sl.get('timestamp', '')
+                ts_str = f" @ {ts}" if ts else ""
+                print(f"    {C.CYAN}SL#{i+1}: ${sl['price']:.4f} (idx={sl['index']}){ts_str}{C.RESET}")
+
+        # Show wave low (used for stop loss)
+        if wave_low:
+            print(f"\n  {C.BRIGHT_RED}Wave Low (SL basis): ${wave_low:.4f}{C.RESET}")
+            print(f"  {C.RED}Stop Loss placed at: ${setup['stop_loss']:.4f}{C.RESET}")
+
+        print(f"  {C.BRIGHT_YELLOW}--------------------{C.RESET}\n")
 
     def _execute_trade(self, params):
         """Execute a trade - speed optimized"""
