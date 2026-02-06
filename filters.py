@@ -1,6 +1,6 @@
 """
 Trade Filters Module
-Simplified filters - only reject clearly bad setups
+Filters to ensure we only trade on trend reversals
 """
 
 import pandas as pd
@@ -12,12 +12,9 @@ from data_fetcher import find_swing_lows
 
 class TradeFilters:
     """
-    Simplified filters to validate trade setups
+    Filters to validate trade setups
 
-    Only rejects:
-    - Trendlines with bad slopes (too flat/steep)
-    - Bearish breakout candles
-    - Extremely strong downtrends (>10% drop in 20 candles)
+    Key filter: Only trade when trend is REVERSING (Higher Lows forming)
     """
 
     def __init__(self, df: pd.DataFrame):
@@ -26,9 +23,9 @@ class TradeFilters:
     def check_all_filters(self, setup: dict) -> Tuple[bool, str]:
         """Run all filters on a trade setup"""
         filters = [
+            self.filter_trend_reversal,  # Most important - Higher Lows
             self.filter_trendline_slope,
             self.filter_breakout_candle,
-            self.filter_not_in_strong_downtrend,
         ]
 
         for filter_func in filters:
@@ -37,6 +34,36 @@ class TradeFilters:
                 return False, reason
 
         return True, "All filters passed"
+
+    def filter_trend_reversal(self, setup: dict) -> Tuple[bool, str]:
+        """
+        Filter: Only trade when trend is reversing (Higher Lows forming)
+
+        In a downtrend: Lower Lows → Don't trade
+        Trend reversing: Higher Lows → Trade allowed!
+        """
+        # Find recent swing lows
+        swing_lows = find_swing_lows(self.df, lookback=config.SWING_LOOKBACK)
+
+        if len(swing_lows) < 2:
+            return False, "Not enough swing lows to detect trend"
+
+        # Get last 3 swing lows (or 2 if only 2 available)
+        recent_lows = swing_lows[-3:] if len(swing_lows) >= 3 else swing_lows[-2:]
+
+        # Check if forming Higher Lows
+        higher_low_count = 0
+        for i in range(1, len(recent_lows)):
+            if recent_lows[i]['price'] > recent_lows[i-1]['price']:
+                higher_low_count += 1
+
+        # Need at least 1 Higher Low to confirm trend reversal
+        if higher_low_count == 0:
+            prices = [f"${sl['price']:.4f}" for sl in recent_lows]
+            return False, f"Still in downtrend - no Higher Lows ({' → '.join(prices)})"
+
+        prices = [f"${sl['price']:.4f}" for sl in recent_lows]
+        return True, f"Trend reversing - Higher Lows detected ({' → '.join(prices)})"
 
     def filter_trendline_slope(self, setup: dict) -> Tuple[bool, str]:
         """
@@ -71,23 +98,6 @@ class TradeFilters:
             return False, "Breakout candle is bearish"
 
         return True, "Breakout candle OK"
-
-    def filter_not_in_strong_downtrend(self, setup: dict) -> Tuple[bool, str]:
-        """
-        Filter: Not in an extreme downtrend (>10% drop)
-        """
-        lookback = 20
-        if len(self.df) < lookback:
-            return True, "Not enough data"
-
-        price_change = (
-            self.df.iloc[-1]['close'] - self.df.iloc[-lookback]['close']
-        ) / self.df.iloc[-lookback]['close']
-
-        if price_change < -0.10:
-            return False, f"Strong downtrend detected ({price_change:.2%})"
-
-        return True, "No strong downtrend"
 
 
 def apply_filters(df: pd.DataFrame, setup: dict) -> Tuple[bool, str]:
