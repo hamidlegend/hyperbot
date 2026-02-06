@@ -275,7 +275,7 @@ class TrendlineBreakoutBot:
         return intervals.get(minutes, "5m")
 
     def _process_breakout(self, setup: dict, df, timeframe: int):
-        """Process a breakout signal - optimized for speed"""
+        """Process a breakout signal - MAXIMUM SPEED"""
         if setup['status'] == 'breakout':
             # Apply filters FIRST (before printing) - speed matters
             passed, reason = apply_filters(df, setup)
@@ -297,7 +297,10 @@ class TrendlineBreakoutBot:
                 logger.warning(f"Trade validation failed: {reason}")
                 return
 
-            # Print breakout info
+            # === EXECUTE TRADE FIRST - NO DELAYS ===
+            response = self._execute_trade_fast(params)
+
+            # === PRINT AFTER TRADE IS PLACED ===
             print(f"\n{C.BRIGHT_GREEN}{'=' * 60}")
             print(f"  BREAKOUT [{timeframe}m]")
             print(f"{'=' * 60}{C.RESET}")
@@ -307,11 +310,25 @@ class TrendlineBreakoutBot:
             print(f"  {C.WHITE}Size:{C.RESET}       {C.BRIGHT_CYAN}{params.position_size} {params.symbol}{C.RESET}")
             print(f"{C.BRIGHT_GREEN}{'=' * 60}{C.RESET}")
 
-            # Execute trade IMMEDIATELY
-            self._execute_trade(params)
+            # Show trade result
+            if response.get('filled'):
+                self.last_signal_time = datetime.now()
+                filled_size = response.get('filled_size', params.position_size)
+                avg_price = response.get('avg_price', params.entry_price)
+                print(f"\n  {C.BRIGHT_GREEN}[OK] Trade FILLED!{C.RESET}")
+                print(f"    {C.WHITE}Size:{C.RESET} {C.BRIGHT_CYAN}{filled_size}{C.RESET}")
+                print(f"    {C.WHITE}Avg Price:{C.RESET} {C.BRIGHT_CYAN}${avg_price:.4f}{C.RESET}")
+            elif response.get('error_message'):
+                print(f"\n  {C.BRIGHT_RED}[X] Order REJECTED: {response.get('error_message')}{C.RESET}")
+            else:
+                print(f"\n  {C.BRIGHT_RED}[X] Trade execution failed!{C.RESET}")
 
-            # Show swing points AFTER trade is opened (not before, to save time)
+            # Show swing info
             self._print_swing_info(setup)
+
+    def _execute_trade_fast(self, params):
+        """Execute trade with MAXIMUM SPEED - no delays"""
+        return self.position_manager.open_position(params)
 
     def _print_swing_info(self, setup: dict):
         """Print swing highs and lows info after trade is opened"""
@@ -356,35 +373,6 @@ class TrendlineBreakoutBot:
             print(f"  {C.RED}Stop Loss placed at: ${setup['stop_loss']:.4f}{C.RESET}")
 
         print(f"  {C.BRIGHT_YELLOW}--------------------{C.RESET}\n")
-
-    def _execute_trade(self, params):
-        """Execute a trade - speed optimized"""
-        # Open position FIRST, print after
-        response = self.position_manager.open_position(params)
-
-        # Check if order was actually filled (not just API success)
-        if response.get('filled'):
-            self.last_signal_time = datetime.now()
-            filled_size = response.get('filled_size', params.position_size)
-            avg_price = response.get('avg_price', params.entry_price)
-            print(f"\n  {C.BRIGHT_GREEN}✓ Trade FILLED!{C.RESET}")
-            print(f"    {C.WHITE}Size:{C.RESET} {C.BRIGHT_CYAN}{filled_size}{C.RESET}")
-            print(f"    {C.WHITE}Avg Price:{C.RESET} {C.BRIGHT_CYAN}${avg_price:.4f}{C.RESET}\n")
-        elif response.get('error_message'):
-            # Order was rejected
-            error_msg = response.get('error_message')
-            print(f"\n  {C.BRIGHT_RED}✗ Order REJECTED: {error_msg}{C.RESET}")
-            logger.error(f"Order rejected: {error_msg}")
-        elif response.get('resting_oid'):
-            # Order is resting (not filled for market order = problem)
-            oid = response.get('resting_oid')
-            print(f"\n  {C.BRIGHT_YELLOW}⚠ Order RESTING (not filled): oid={oid}{C.RESET}")
-            print(f"    {C.YELLOW}This shouldn't happen for market orders - check liquidity{C.RESET}")
-            logger.warning(f"Market order resting instead of filling: oid={oid}")
-        else:
-            # Unknown failure
-            print(f"\n  {C.BRIGHT_RED}✗ Trade execution failed!{C.RESET}")
-            logger.error(f"Trade execution failed: {response}")
 
     def _manage_position(self):
         """Manage existing position"""
