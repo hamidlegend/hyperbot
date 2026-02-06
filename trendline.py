@@ -118,6 +118,27 @@ class TrendlineDetector:
         if len(points) < 2:
             return None
 
+        # === PATTERN QUALITY CHECKS ===
+
+        # Check 1: Pattern width (distance between first and last swing)
+        pattern_width = points[-1]['index'] - points[0]['index']
+        min_pattern_candles = getattr(config, 'MIN_PATTERN_CANDLES', 15)
+
+        if pattern_width < min_pattern_candles:
+            logger.debug(f"Rejected: pattern too small ({pattern_width} < {min_pattern_candles} candles)")
+            return None
+
+        # Check 2: Distance between consecutive swing highs
+        min_swing_distance = getattr(config, 'MIN_SWING_DISTANCE', 5)
+
+        for i in range(1, len(points)):
+            distance = points[i]['index'] - points[i-1]['index']
+            if distance < min_swing_distance:
+                logger.debug(f"Rejected: swing highs too close ({distance} < {min_swing_distance} candles)")
+                return None
+
+        # === END PATTERN QUALITY CHECKS ===
+
         # Extract x (index) and y (price) values
         x = np.array([p['index'] for p in points])
         y = np.array([p['price'] for p in points])

@@ -324,7 +324,9 @@ class TrendlineBreakoutBot:
 
         # Show trendline points
         if trendline:
+            pattern_width = trendline.point2_index - trendline.point1_index
             print(f"  {C.WHITE}Trendline:{C.RESET} {C.CYAN}slope={trendline.slope:.6f}, touches={trendline.num_touches}{C.RESET}")
+            print(f"  {C.WHITE}Pattern width:{C.RESET} {C.BRIGHT_GREEN}{pattern_width} candles{C.RESET}")
             print(f"    {C.DIM}Point 1: index={trendline.point1_index}, price=${trendline.point1_price:.4f}{C.RESET}")
             print(f"    {C.DIM}Point 2: index={trendline.point2_index}, price=${trendline.point2_price:.4f}{C.RESET}")
 

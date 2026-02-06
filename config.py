@@ -37,6 +37,20 @@ SWING_LOOKBACK = 2  # A swing high has lower highs on both sides
 CANDLES_TO_ANALYZE = 150
 
 # =============================================================================
+# PATTERN QUALITY FILTERS (avoid small/noisy patterns)
+# =============================================================================
+
+# Minimum pattern width (candles between first and last swing high)
+# Small patterns are noise - we want clear, visible trendlines
+# Example: If MIN_PATTERN_CANDLES=15, trendline must span at least 15 candles
+MIN_PATTERN_CANDLES = 15
+
+# Minimum distance between consecutive swing highs (in candles)
+# If swing highs are too close together, it's noise not a real pattern
+# Example: If MIN_SWING_DISTANCE=5, each swing must be 5+ candles apart
+MIN_SWING_DISTANCE = 5
+
+# =============================================================================
 # RISK MANAGEMENT
 # =============================================================================
 
