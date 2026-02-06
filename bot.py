@@ -129,6 +129,7 @@ class TrendlineBreakoutBot:
         self.last_trade_close_time = None  # Cooldown after closing position
         self.trade_cooldown_minutes = getattr(config, 'TRADE_COOLDOWN_MINUTES', 5)
         self.had_open_position = False  # Track if we had a position
+        self.last_trade_entry_price = None  # Track last entry to avoid sub-trendlines
 
         # Cache balance to avoid extra API calls during trade execution
         self._cached_balance = None
@@ -277,6 +278,24 @@ class TrendlineBreakoutBot:
     def _process_breakout(self, setup: dict, df, timeframe: int):
         """Process a breakout signal - MAXIMUM SPEED"""
         if setup['status'] == 'breakout':
+            # Check if this is a "sub-trendline" (trendline below previous entry)
+            # After a successful trade, we don't want to trade smaller trendlines in the same area
+            trendline = setup.get('trendline')
+            if self.last_trade_entry_price and trendline:
+                # Reset tracking if price made new high (1% above last entry)
+                current_price = setup.get('entry_price', 0)
+                if current_price > self.last_trade_entry_price * 1.01:
+                    logger.info(f"Price above last entry - resetting sub-trendline filter")
+                    self.last_trade_entry_price = None
+                # Check if Point1 is below last entry (sub-trendline)
+                elif trendline.point1_price < self.last_trade_entry_price:
+                    logger.warning(
+                        f"Rejected: sub-trendline (Point1 ${trendline.point1_price:.4f} < "
+                        f"last entry ${self.last_trade_entry_price:.4f})"
+                    )
+                    print(f"  {C.DIM}Skipped: trendline below previous entry level{C.RESET}")
+                    return
+
             # Apply filters FIRST (before printing) - speed matters
             passed, reason = apply_filters(df, setup)
             if not passed:
@@ -315,6 +334,8 @@ class TrendlineBreakoutBot:
                 self.last_signal_time = datetime.now()
                 filled_size = response.get('filled_size', params.position_size)
                 avg_price = response.get('avg_price', params.entry_price)
+                # Track entry price to prevent sub-trendline trades
+                self.last_trade_entry_price = avg_price
                 print(f"\n  {C.BRIGHT_GREEN}[OK] Trade FILLED!{C.RESET}")
                 print(f"    {C.WHITE}Size:{C.RESET} {C.BRIGHT_CYAN}{filled_size}{C.RESET}")
                 print(f"    {C.WHITE}Avg Price:{C.RESET} {C.BRIGHT_CYAN}${avg_price:.4f}{C.RESET}")
