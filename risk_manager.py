@@ -242,47 +242,41 @@ class PositionManager:
             response['filled_size'] = filled_size
             response['avg_price'] = avg_price
 
-            # Place TP/SL orders on exchange
+            # Place TP/SL orders in background thread (don't block main execution)
+            import threading
             is_long = params.direction == "long"
-            logger.info(f"Placing TP/SL orders: SL=${params.stop_loss}, TP=${params.take_profit}")
 
-            try:
-                tp_sl_response = self.client.place_tp_sl_orders(
-                    symbol=params.symbol,
-                    is_long=is_long,
-                    size=filled_size,
-                    stop_loss=params.stop_loss,
-                    take_profit=params.take_profit
-                )
+            def place_tp_sl_async():
+                try:
+                    tp_sl_response = self.client.place_tp_sl_orders(
+                        symbol=params.symbol,
+                        is_long=is_long,
+                        size=filled_size,
+                        stop_loss=params.stop_loss,
+                        take_profit=params.take_profit
+                    )
+                    # Log results
+                    sl_resp = tp_sl_response.get('sl', {})
+                    if sl_resp.get('status') == 'ok':
+                        sl_statuses = sl_resp.get('response', {}).get('data', {}).get('statuses', [])
+                        if sl_statuses and 'resting' in sl_statuses[0]:
+                            logger.info(f"[OK] SL set @ ${params.stop_loss}")
+                        elif sl_statuses and 'error' in sl_statuses[0]:
+                            logger.error(f"[X] SL rejected: {sl_statuses[0].get('error')}")
 
-                # Check SL order
-                sl_resp = tp_sl_response.get('sl', {})
-                if sl_resp.get('status') == 'ok':
-                    sl_statuses = sl_resp.get('response', {}).get('data', {}).get('statuses', [])
-                    if sl_statuses and 'resting' in sl_statuses[0]:
-                        sl_oid = sl_statuses[0]['resting'].get('oid')
-                        logger.info(f"[OK] Stop Loss set @ ${params.stop_loss} (oid: {sl_oid})")
-                        response['sl_oid'] = sl_oid
-                    elif sl_statuses and 'error' in sl_statuses[0]:
-                        logger.error(f"[X] SL order rejected: {sl_statuses[0].get('error')}")
-                else:
-                    logger.error(f"[X] SL order failed: {sl_resp}")
+                    tp_resp = tp_sl_response.get('tp', {})
+                    if tp_resp.get('status') == 'ok':
+                        tp_statuses = tp_resp.get('response', {}).get('data', {}).get('statuses', [])
+                        if tp_statuses and 'resting' in tp_statuses[0]:
+                            logger.info(f"[OK] TP set @ ${params.take_profit}")
+                        elif tp_statuses and 'error' in tp_statuses[0]:
+                            logger.error(f"[X] TP rejected: {tp_statuses[0].get('error')}")
+                except Exception as e:
+                    logger.error(f"Failed to place TP/SL: {e}")
 
-                # Check TP order
-                tp_resp = tp_sl_response.get('tp', {})
-                if tp_resp.get('status') == 'ok':
-                    tp_statuses = tp_resp.get('response', {}).get('data', {}).get('statuses', [])
-                    if tp_statuses and 'resting' in tp_statuses[0]:
-                        tp_oid = tp_statuses[0]['resting'].get('oid')
-                        logger.info(f"[OK] Take Profit set @ ${params.take_profit} (oid: {tp_oid})")
-                        response['tp_oid'] = tp_oid
-                    elif tp_statuses and 'error' in tp_statuses[0]:
-                        logger.error(f"[X] TP order rejected: {tp_statuses[0].get('error')}")
-                else:
-                    logger.error(f"[X] TP order failed: {tp_resp}")
-
-            except Exception as e:
-                logger.error(f"Failed to place TP/SL orders: {e}")
+            # Start TP/SL placement in background
+            threading.Thread(target=place_tp_sl_async, daemon=True).start()
+            logger.info(f"TP/SL orders queued (async)")
 
         elif 'resting' in order_status:
             # Order is sitting in orderbook, not filled
