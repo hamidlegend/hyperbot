@@ -31,7 +31,8 @@ MAX_SWING_HIGHS = 4
 
 # Number of candles to look back for swing high detection
 # Lower = more sensitive (finds more swings), Higher = stricter
-SWING_LOOKBACK = 2  # A swing high has lower highs on both sides
+# IMPORTANT: Too low (2) = noise, too high (5+) = misses swings
+SWING_LOOKBACK = 3  # A swing high has lower highs on both sides (3 = requires 6 total candles)
 
 # Number of candles to analyze for trendline
 CANDLES_TO_ANALYZE = 150
@@ -42,13 +43,23 @@ CANDLES_TO_ANALYZE = 150
 
 # Minimum pattern width (candles between first and last swing high)
 # Small patterns are noise - we want clear, visible trendlines
-# Example: If MIN_PATTERN_CANDLES=15, trendline must span at least 15 candles
-MIN_PATTERN_CANDLES = 15
+# For 1-minute: 30 candles = 30 minutes minimum pattern
+MIN_PATTERN_CANDLES = 30
 
 # Minimum distance between consecutive swing highs (in candles)
 # If swing highs are too close together, it's noise not a real pattern
-# Example: If MIN_SWING_DISTANCE=5, each swing must be 5+ candles apart
-MIN_SWING_DISTANCE = 5
+# For 1-minute: 10 candles = 10 minutes apart minimum
+MIN_SWING_DISTANCE = 10
+
+# Maximum breakout distance from trendline (as percent of price)
+# If price is already too far above trendline, don't trade - missed the breakout
+# 0.005 = 0.5% max distance
+MAX_BREAKOUT_DISTANCE = 0.005
+
+# Minimum price range of trendline (as percent)
+# Trendline must represent meaningful price movement, not noise
+# 0.003 = 0.3% minimum price drop across trendline
+MIN_TRENDLINE_RANGE = 0.003
 
 # =============================================================================
 # RISK MANAGEMENT
