@@ -25,6 +25,8 @@ class TradeFilters:
         filters = [
             self.filter_trend_reversal,  # Most important - Higher Lows
             self.filter_trendline_slope,
+            self.filter_trendline_range,  # Trendline must have meaningful price movement
+            self.filter_breakout_distance,  # Price can't be too far from trendline
             self.filter_breakout_candle,
         ]
 
@@ -84,6 +86,56 @@ class TradeFilters:
             return False, f"Trendline too steep (slope: {normalized_slope:.6f})"
 
         return True, f"Trendline slope OK ({normalized_slope:.6f})"
+
+    def filter_trendline_range(self, setup: dict) -> Tuple[bool, str]:
+        """
+        Filter: Trendline must represent meaningful price movement
+
+        A trendline with tiny price difference is just noise, not a real pattern.
+        The price drop from first to last point should be significant.
+        """
+        trendline = setup.get('trendline')
+        if trendline is None:
+            return True, "No trendline to check"
+
+        # Calculate price range of trendline
+        price_drop = trendline.point1_price - trendline.point2_price
+        avg_price = (trendline.point1_price + trendline.point2_price) / 2
+        range_percent = abs(price_drop) / avg_price
+
+        min_range = getattr(config, 'MIN_TRENDLINE_RANGE', 0.003)
+
+        if range_percent < min_range:
+            return False, f"Trendline too flat - only {range_percent*100:.2f}% price range (need {min_range*100:.1f}%)"
+
+        return True, f"Trendline range OK ({range_percent*100:.2f}%)"
+
+    def filter_breakout_distance(self, setup: dict) -> Tuple[bool, str]:
+        """
+        Filter: Price can't be too far above trendline
+
+        If price already moved way above the trendline, we missed the breakout.
+        This prevents entering late after a big move up.
+        """
+        if setup['status'] != 'breakout':
+            return True, "No breakout to check"
+
+        breakout = setup.get('breakout', {})
+        breakout_price = breakout.get('breakout_price', 0)
+        trendline_price = breakout.get('trendline_price', 0)
+
+        if trendline_price == 0:
+            return True, "No trendline price"
+
+        # Calculate how far price is above trendline
+        distance = (breakout_price - trendline_price) / trendline_price
+
+        max_distance = getattr(config, 'MAX_BREAKOUT_DISTANCE', 0.005)
+
+        if distance > max_distance:
+            return False, f"Price too far from trendline ({distance*100:.2f}% > {max_distance*100:.1f}% max)"
+
+        return True, f"Breakout distance OK ({distance*100:.2f}%)"
 
     def filter_breakout_candle(self, setup: dict) -> Tuple[bool, str]:
         """
