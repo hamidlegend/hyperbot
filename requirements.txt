@@ -31,3 +31,6 @@ colorlog>=6.7.0
 
 # Technical analysis (optional, for additional indicators)
 ta>=0.11.0
+
+# Telegram integration (for signal bot)
+telethon>=1.36.0

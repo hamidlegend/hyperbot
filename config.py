@@ -126,3 +126,37 @@ TRADE_COOLDOWN_MINUTES = 2
 
 # Logging level (DEBUG for detailed output, INFO for normal operation)
 LOG_LEVEL = "DEBUG"
+
+# =============================================================================
+# TELEGRAM SIGNAL BOT SETTINGS
+# =============================================================================
+
+# Telegram API credentials (get from https://my.telegram.org/apps)
+TELEGRAM_API_ID = None  # Your API ID (integer)
+TELEGRAM_API_HASH = None  # Your API Hash (string)
+TELEGRAM_PHONE = None  # Phone number with country code (e.g. "+98912...")
+
+# Telegram session file name (stores login state so you don't re-login every time)
+TELEGRAM_SESSION_NAME = "signal_bot"
+
+# Channel/Group IDs to monitor (numeric IDs)
+# Use `python telegram_bot.py --list-channels` to find your channel IDs
+TELEGRAM_CHANNEL_IDS = []  # e.g. [-1001234567890, -1009876543210]
+
+# Channel usernames to monitor (without @)
+TELEGRAM_CHANNEL_USERNAMES = []  # e.g. ["crypto_signals", "my_channel"]
+
+# Default leverage if signal doesn't specify one
+TELEGRAM_DEFAULT_LEVERAGE = 5
+
+# Maximum allowed leverage from signals (safety cap)
+TELEGRAM_MAX_LEVERAGE = 20
+
+# Use only first TP as take profit (True) or use all TPs with split sizing (False)
+TELEGRAM_USE_FIRST_TP_ONLY = True
+
+# Auto-execute trades from signals (False = just parse and display, don't trade)
+TELEGRAM_AUTO_TRADE = False
+
+# Cooldown between trades from signals (in seconds)
+TELEGRAM_TRADE_COOLDOWN = 30
